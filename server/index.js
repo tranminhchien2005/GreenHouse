@@ -82,6 +82,18 @@ try {
 
 startDeviceStatusMqttListener();
 
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    console.error(`[Server] Port ${PORT} is already in use.`);
+    console.error(
+      `[Server] Tip: find owner with \"Get-NetTCPConnection -LocalPort ${PORT}\" then \"taskkill /F /PID <pid>\".`,
+    );
+  } else {
+    console.error("[Server] Listen error:", err.message);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, () => {
   console.log(`GreenHouse API running at http://localhost:${PORT}`);
 });

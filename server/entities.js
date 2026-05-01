@@ -1,7 +1,8 @@
 import { requireUser } from "./auth.js";
+import { pool } from "./database.js";
 import { readBody, sendJson } from "./httpUtils.js";
 import { publishSim800lSmsRequest } from "./sim800l.js";
-import { createAlertsForSensorData, toLegacyAlert } from "./alerts.js";
+import { createAlertsForSensorData, invalidateThresholdCache, toLegacyAlert } from "./alerts.js";
 import { publishAutomationCommand, runAutomationRulesForSensorData } from "./automation.js";
 import {
   createAlert,
@@ -32,7 +33,7 @@ import {
   listSensorReadings,
 } from "./repositories/sensorRepository.js";
 
-const allowedEntities = new Set(["SensorData", "DeviceState", "AutomationRule", "Alert"]);
+const allowedEntities = new Set(["SensorData", "DeviceState", "AutomationRule", "Alert", "AlertThreshold"]);
 
 function sortItems(items, sortBy) {
   if (!sortBy) return items;
@@ -573,10 +574,90 @@ async function handleDeviceState(req, res, url, id) {
   return false;
 }
 
-export async function handleEntity(req, res, url, parts) {
-  const user = await requireUser(req, res);
-  if (!user) return true;
+function toLegacyThreshold(row) {
+  if (!row) return null;
 
+  return {
+    id: row.id,
+    sensor_type: row.sensor_type,
+    operator: row.operator,
+    value: row.value == null ? null : Number(row.value),
+    level: row.level,
+    active: row.active,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+async function handleAlertThreshold(req, res, id) {
+  if (req.method === "GET" && !id) {
+    const result = await pool.query(
+      "SELECT * FROM alert_thresholds ORDER BY sensor_type, level",
+    );
+    sendJson(res, 200, result.rows.map(toLegacyThreshold));
+    return true;
+  }
+
+  if (req.method === "PATCH" && id) {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    if (user.role !== "admin") {
+      sendJson(res, 403, { message: "Không có quyền" });
+      return true;
+    }
+
+    const body = await readBody(req);
+    const fields = [];
+    const values = [];
+
+    if (Object.prototype.hasOwnProperty.call(body, "value")) {
+      const number = Number(body.value);
+      if (!Number.isFinite(number)) {
+        sendJson(res, 400, { message: "value phải là số" });
+        return true;
+      }
+      values.push(number);
+      fields.push(`value = $${values.length}`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "active")) {
+      if (typeof body.active !== "boolean") {
+        sendJson(res, 400, { message: "active phải là boolean" });
+        return true;
+      }
+      values.push(body.active);
+      fields.push(`active = $${values.length}`);
+    }
+
+    if (fields.length === 0) {
+      sendJson(res, 400, { message: "Không có field hợp lệ để cập nhật" });
+      return true;
+    }
+
+    fields.push("updated_at = NOW()");
+    values.push(id);
+
+    const result = await pool.query(
+      `UPDATE alert_thresholds SET ${fields.join(", ")} WHERE id = $${values.length} RETURNING *`,
+      values,
+    );
+
+    if (result.rowCount === 0) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    invalidateThresholdCache();
+    sendJson(res, 200, toLegacyThreshold(result.rows[0]));
+    return true;
+  }
+
+  sendJson(res, 405, { message: "Method not allowed" });
+  return true;
+}
+
+export async function handleEntity(req, res, url, parts) {
   const entityName = parts[1];
   const id = parts[2];
   const action = parts[3];
@@ -585,6 +666,13 @@ export async function handleEntity(req, res, url, parts) {
     sendJson(res, 404, { message: "Entity not found" });
     return true;
   }
+
+  if (entityName === "AlertThreshold") {
+    return handleAlertThreshold(req, res, id);
+  }
+
+  const user = await requireUser(req, res);
+  if (!user) return true;
 
   if (entityName === "DeviceState") {
     return handleDeviceState(req, res, url, id);
