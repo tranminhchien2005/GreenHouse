@@ -10,6 +10,7 @@ import Controls from '@/pages/Controls';
 import Automation from '@/pages/Automation';
 import Alerts from '@/pages/Alerts';
 import History from '@/pages/History';
+import Settings from '@/pages/Settings';
 import Login from '@/pages/Login';
 
 const AuthenticatedApp = () => {
@@ -49,6 +50,7 @@ const AuthenticatedApp = () => {
         <Route path="/automation" element={<Automation />} />
         <Route path="/alerts" element={<Alerts />} />
         <Route path="/history" element={<History />} />
+        <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<PageNotFound />} />
     </Routes>

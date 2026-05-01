@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Sliders, Zap, Bell, BarChart3, Leaf, Menu, X, LogOut } from 'lucide-react';
+import { LayoutDashboard, Sliders, Zap, Bell, BarChart3, Leaf, Menu, X, LogOut, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
 import MqttStatusBadge from './MqttStatusBadge';
@@ -12,6 +12,7 @@ const navItems = [
   { path: '/automation', label: 'Tự động hóa', icon: Zap },
   { path: '/alerts', label: 'Cảnh báo', icon: Bell },
   { path: '/history', label: 'Lịch sử', icon: BarChart3 },
+  { path: '/settings', label: 'Cài đặt', icon: Settings },
 ];
 
 export default function Sidebar() {
