@@ -1,0 +1,130 @@
+{
+  "SensorData": [
+    {
+      "id": "afa72639-2904-4130-b650-dad144581c7b",
+      "created_date": "2026-04-30T04:22:08.019Z",
+      "light": 69
+    },
+    {
+      "id": "fbb77ac9-d44c-4049-86aa-67ca53712beb",
+      "created_date": "2026-04-30T04:22:08.014Z",
+      "light": 69
+    },
+    {
+      "id": "e7a9c9e9-da68-4b5f-86d4-11a52a1707cf",
+      "created_date": "2026-04-30T04:21:49.926Z"
+    },
+    {
+      "id": "6ca3fbed-9058-4b9c-b34d-eff3f435b455",
+      "created_date": "2026-04-30T04:21:41.533Z"
+    }
+  ],
+  "DeviceState": [
+    {
+      "id": "pump",
+      "device_id": "pump",
+      "device_name": "May bom",
+      "is_on": false,
+      "mode": "manual",
+      "online": false,
+      "last_seen": null,
+      "created_date": "2026-04-29T14:56:46.090Z",
+      "updated_date": "2026-04-29T14:56:46.090Z"
+    },
+    {
+      "id": "fan",
+      "device_id": "fan",
+      "device_name": "Quat",
+      "is_on": false,
+      "mode": "manual",
+      "online": false,
+      "last_seen": null,
+      "created_date": "2026-04-29T14:56:46.090Z",
+      "updated_date": "2026-04-29T14:56:46.090Z"
+    },
+    {
+      "id": "mist",
+      "device_id": "mist",
+      "device_name": "Phun suong",
+      "is_on": false,
+      "mode": "manual",
+      "online": false,
+      "last_seen": null,
+      "created_date": "2026-04-29T14:56:46.090Z",
+      "updated_date": "2026-04-29T14:56:46.090Z"
+    },
+    {
+      "id": "light",
+      "device_id": "light",
+      "device_name": "Den",
+      "is_on": false,
+      "mode": "manual",
+      "online": false,
+      "last_seen": null,
+      "created_date": "2026-04-29T14:56:46.090Z",
+      "updated_date": "2026-04-29T14:56:46.090Z"
+    }
+  ],
+  "AutomationRule": [
+    {
+      "id": "test-auto-pump-off",
+      "created_date": "2026-04-30T04:36:26.172Z",
+      "name": "Test pump off",
+      "sensor_type": "temperature",
+      "condition": "above",
+      "threshold": 40,
+      "target_device": "pump",
+      "action": "turn_off",
+      "is_active": true,
+      "last_triggered_date": "2026-04-30T09:47:41.322Z",
+      "last_triggered_at": "2026-04-30T09:47:41.322Z",
+      "last_triggered_value": 45,
+      "updated_date": "2026-04-30T09:47:41.322Z",
+      "updated_at": "2026-04-30T09:47:41.322Z"
+    }
+  ],
+  "Alert": [
+    {
+      "type": "warning",
+      "level": "warning",
+      "message": "Độ ẩm đất thấp, cần tưới nước. Giá trị: 20 %, ngưỡng: 30 %",
+      "sensor_type": "soil_moisture",
+      "value": 20,
+      "threshold": 30,
+      "is_read": false,
+      "created_date": "2026-04-30T04:36:36.715Z",
+      "id": "a45173a7-dae1-419a-ac82-43803ea6f1d0"
+    },
+    {
+      "type": "warning",
+      "level": "warning",
+      "message": "Nhiệt độ vượt ngưỡng cho phép. Giá trị: 45 °C, ngưỡng: 40 °C",
+      "sensor_type": "temperature",
+      "value": 45,
+      "threshold": 40,
+      "is_read": false,
+      "created_date": "2026-04-30T04:36:36.715Z",
+      "id": "4fc88e1c-a651-470a-ac3d-be952cf3d577"
+    },
+    {
+      "type": "danger",
+      "level": "danger",
+      "message": "Nguy hiểm! Phát hiện khí gas hoặc cháy. Giá trị: 350 ppm, ngưỡng: 300 ppm",
+      "sensor_type": "gas",
+      "value": 350,
+      "threshold": 300,
+      "is_read": false,
+      "created_date": "2026-04-30T04:36:36.715Z",
+      "id": "702d3a4d-1e38-4c9b-88dc-edcced02c8ab"
+    }
+  ],
+  "Users": [
+    {
+      "id": "admin",
+      "username": "admin",
+      "password": "admin123",
+      "name": "Admin",
+      "role": "admin"
+    }
+  ]
+}

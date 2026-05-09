@@ -3,9 +3,13 @@
     "private": true,
     "version": "0.0.0",
     "type": "module",
+    "engines": {
+        "node": ">=18"
+    },
     "scripts": {
         "dev": "vite",
         "server": "node server/index.js",
+        "mqtt:pub": "node server/scripts/publishMqttMessage.js",
         "db:test": "node server/scripts/testPostgresConnection.js",
         "db:migrate": "node server/scripts/runMigrations.js",
         "db:test:module": "node server/scripts/testDatabaseModule.js",
