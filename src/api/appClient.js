@@ -94,4 +94,21 @@ export const appClient = {
     AutomationRule: createEntityStore("AutomationRule"),
     Alert: createEntityStore("Alert"),
   },
+  chatbot: {
+    async listPlants() {
+      return request("/chatbot/plants");
+    },
+    async sendMessage(data) {
+      return request("/chatbot/message", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+    async executeDeviceAction(data) {
+      return request("/chatbot/device-action", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+  },
 };

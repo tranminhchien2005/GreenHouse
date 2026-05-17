@@ -7,6 +7,7 @@
 - Frontend: React, Vite, Tailwind CSS
 - Backend: Node.js HTTP server
 - Database: PostgreSQL (kết nối qua `DATABASE_URL`)
+- Chatbot: Gemini API qua backend
 - File `server/data/db.json` chỉ còn là **nguồn import một lần** qua `npm run db:import:*`, không còn dùng làm database runtime.
 - Realtime thiết bị: MQTT qua HiveMQ public broker
 
@@ -80,6 +81,8 @@ Trách nhiệm phần cứng:
 - Bật/tắt relay hoặc thiết bị thật khi nhận lệnh.
 - Publish trạng thái thật của thiết bị về topic `greenhouse/device/status` nếu có hỗ trợ.
 - ESP32 gắn SIM800L subscribe topic `greenhouse/alerts/sms` để gửi SMS.
+- Chatbot Gemini đọc ngữ cảnh cảm biến, thiết bị, cảnh báo và luật tự động hóa từ PostgreSQL.
+- Chatbot ưu tiên hồ sơ cây trong `plant_profiles`; nếu chưa có hồ sơ cây, chatbot dùng kiến thức nông nghiệp phổ thông để tư vấn chung.
 
 ## Cài đặt
 
@@ -95,7 +98,12 @@ Backend yêu cầu PostgreSQL. Tạo file `.env` ở thư mục gốc:
 DATABASE_URL=postgres://greenhouse:greenhouse123@localhost:5432/greenhouse
 JWT_SECRET=greenhouse_dev_secret_change_me
 JWT_EXPIRES_IN=7d
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3.1-flash-lite
 ```
+
+`GEMINI_API_KEY` chỉ dùng ở backend. Không đặt key này trong biến `VITE_...` vì frontend sẽ bị lộ key ra trình duyệt.
+Mặc định dùng `gemini-3.1-flash-lite` để phù hợp dự án cá nhân và free tier.
 
 Tạo schema lần đầu (bắt buộc trước khi start server):
 
@@ -118,6 +126,39 @@ Server khi start sẽ:
 - Warm-up connection pool và in `[Database] Connection pool ready.`
 - Kiểm tra các bảng bắt buộc (`devices`, `sensor_readings`, `alerts`, `automation_rules`, `users`) và in `[Database] Schema OK.`
 - Nếu kết nối DB thất bại hoặc thiếu bảng, server sẽ exit và hướng dẫn chạy `npm run db:migrate`.
+
+## Hồ sơ cây trồng cho chatbot
+
+Chatbot dùng bảng `plant_profiles` để nhận diện cây theo tên hoặc alias trong câu hỏi, ví dụ `cà chua`, `ca chua`, `tomato`.
+Chatbot cũng dùng bảng `user_plants` để biết các cây/khu vực đang trồng trong nhà kính.
+
+Seed mặc định có một số cây phổ biến:
+
+```text
+Cà chua, xà lách, dâu tây, rau cải, dưa leo, ớt, rau muống, húng quế, bạc hà, cải thìa
+```
+
+Seed mặc định cho cây đang trồng:
+
+```text
+Khay 1: Cà chua
+Khay 2: Xà lách
+Chậu 1: Dâu tây
+```
+
+Luồng xử lý:
+
+- Nếu câu hỏi khớp cây/khu vực trong `user_plants`, chatbot hiểu đó là cây đang được hỏi.
+- Nếu cây có trong `plant_profiles`, chatbot dùng ngưỡng nhiệt độ, độ ẩm, độ ẩm đất và ánh sáng từ database.
+- Nếu cây chưa có trong database, chatbot vẫn trả lời bằng kiến thức nông nghiệp phổ thông và nói rõ đó là khuyến nghị chung.
+- Widget chatbot có dropdown chọn cây/khu vực. Frontend gọi `GET /chatbot/plants` và gửi `plantId` trong `POST /chatbot/message`.
+- Khi chatbot đề xuất bật/tắt thiết bị, widget chỉ hiện nút xác nhận. Lệnh thật chỉ được gửi sau khi người dùng bấm xác nhận qua `POST /chatbot/device-action`.
+
+Sau khi pull/cập nhật code có migration mới, chạy:
+
+```bash
+npm run db:migrate
+```
 
 ## Chạy app
 
@@ -237,6 +278,7 @@ Không cấp nguồn SIM800L trực tiếp từ chân 3.3V/5V của ESP32 vì mo
 
 - `GET /health`
 - `GET /auth/me`
+- `POST /chatbot/message`
 - `GET /api/:entity`
 - `POST /api/:entity`
 - `PATCH /api/:entity/:id`

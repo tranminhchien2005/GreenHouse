@@ -4,6 +4,7 @@ import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { pool } from "./database.js";
 import { handleAuth } from "./auth.js";
+import { handleChatbot } from "./chatbot.js";
 import { handleEntity } from "./entities.js";
 import { startDeviceStatusMqttListener } from "./deviceStatus.js";
 import { getRouteParts, sendJson, sendNoContent } from "./httpUtils.js";
@@ -29,6 +30,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (parts[0] === "auth" && await handleAuth(req, res, parts)) return;
+    if (parts[0] === "chatbot" && await handleChatbot(req, res, parts)) return;
     if (parts[0] === "api" && await handleEntity(req, res, url, parts)) return;
 
     sendJson(res, 404, { message: "Route not found" });

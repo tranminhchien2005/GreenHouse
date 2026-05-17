@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
+import ChatbotWidget from '@/components/chatbot/ChatbotWidget';
 import Sidebar from './Sidebar';
 import { getMqttClient } from '@/lib/mqttClient';
 
@@ -17,6 +18,7 @@ export default function AppLayout() {
           <Outlet />
         </div>
       </main>
+      <ChatbotWidget />
     </div>
   );
 }
