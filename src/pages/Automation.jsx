@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DEVICE_LABELS, SENSOR_LABELS } from '@/config/greenhouse';
 import { automationService } from '@/services/automationService';
+import { useToast } from '@/components/ui/use-toast';
 
 const conditionLabels = { above: 'Lớn hơn', below: 'Nhỏ hơn', equals: 'Bằng' };
 const actionLabels = { turn_on: 'Bật', turn_off: 'Tắt' };
@@ -20,11 +21,13 @@ export default function Automation() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true });
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: rules = [] } = useQuery({
     queryKey: ['automationRules', 'list'],
     queryFn: () => automationService.listRules(),
     refetchOnMount: 'always',
+    refetchInterval: 5000,
   });
 
   const createMutation = useMutation({
@@ -33,17 +36,47 @@ export default function Automation() {
       await queryClient.invalidateQueries({ queryKey: ['automationRules'] });
       setOpen(false);
       resetForm();
+      toast({ title: 'Đã tạo quy tắc tự động' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Tạo quy tắc thất bại',
+        description: error?.message || 'Không thể tạo quy tắc tự động. Kiểm tra dữ liệu rồi thử lại.',
+      });
     },
   });
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, is_active }) => automationService.updateRule(id, { is_active }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automationRules'] }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['automationRules'] });
+      toast({
+        title: variables.is_active ? 'Đã bật quy tắc' : 'Đã tắt quy tắc',
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Cập nhật quy tắc thất bại',
+        description: error?.message || 'Không thể cập nhật trạng thái quy tắc.',
+      });
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => automationService.deleteRule(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['automationRules'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['automationRules'] });
+      toast({ title: 'Đã xóa quy tắc tự động' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Xóa quy tắc thất bại',
+        description: error?.message || 'Không thể xóa quy tắc tự động.',
+      });
+    },
   });
 
   const resetForm = () => setForm({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true });
@@ -69,12 +102,12 @@ export default function Automation() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <Label>Tên quy tắc</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Tự động tưới khi đất khô" />
+                <Input disabled={createMutation.isPending} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Tự động tưới khi đất khô" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Cảm biến</Label>
-                  <Select value={form.sensor_type} onValueChange={(v) => setForm({ ...form, sensor_type: v })}>
+                  <Select disabled={createMutation.isPending} value={form.sensor_type} onValueChange={(v) => setForm({ ...form, sensor_type: v })}>
                     <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(SENSOR_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
@@ -83,7 +116,7 @@ export default function Automation() {
                 </div>
                 <div>
                   <Label>Điều kiện</Label>
-                  <Select value={form.condition} onValueChange={(v) => setForm({ ...form, condition: v })}>
+                  <Select disabled={createMutation.isPending} value={form.condition} onValueChange={(v) => setForm({ ...form, condition: v })}>
                     <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="above">Lớn hơn</SelectItem>
@@ -95,12 +128,12 @@ export default function Automation() {
               </div>
               <div>
                 <Label>Ngưỡng giá trị</Label>
-                <Input type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} placeholder="VD: 30" />
+                <Input disabled={createMutation.isPending} type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} placeholder="VD: 30" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Thiết bị</Label>
-                  <Select value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
+                  <Select disabled={createMutation.isPending} value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
                     <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                     <SelectContent>
                       {Object.entries(DEVICE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
@@ -109,7 +142,7 @@ export default function Automation() {
                 </div>
                 <div>
                   <Label>Hành động</Label>
-                  <Select value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
+                  <Select disabled={createMutation.isPending} value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
                     <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="turn_on">Bật</SelectItem>
@@ -143,7 +176,13 @@ export default function Automation() {
                 exit={{ opacity: 0, x: -20 }}
                 transition={{ delay: i * 0.05 }}
               >
-                <Card className={cn("p-5 border-0 shadow-sm transition-opacity", !rule.is_active && "opacity-50")}>
+                {(() => {
+                  const isTogglingThis = toggleMutation.isPending && toggleMutation.variables?.id === rule.id;
+                  const isDeletingThis = deleteMutation.isPending && deleteMutation.variables === rule.id;
+                  const isRulePending = isTogglingThis || isDeletingThis;
+
+                  return (
+                <Card className={cn("p-5 border-0 shadow-sm transition-opacity", (!rule.is_active || isDeletingThis) && "opacity-50")}>
                   <div className="flex items-center justify-between">
                     <div className="flex-1">
                       <h3 className="font-semibold">{rule.name}</h3>
@@ -160,11 +199,13 @@ export default function Automation() {
                     <div className="flex items-center gap-3">
                       <Switch
                         checked={rule.is_active}
+                        disabled={isRulePending}
                         onCheckedChange={(checked) => toggleMutation.mutate({ id: rule.id, is_active: checked })}
                       />
                       <Button
                         variant="ghost"
                         size="icon"
+                        disabled={isRulePending}
                         onClick={() => deleteMutation.mutate(rule.id)}
                         className="text-muted-foreground hover:text-destructive"
                       >
@@ -173,6 +214,8 @@ export default function Automation() {
                     </div>
                   </div>
                 </Card>
+                  );
+                })()}
               </motion.div>
             ))}
           </AnimatePresence>

@@ -1,15 +1,9 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import ChatbotWidget from '@/components/chatbot/ChatbotWidget';
 import Sidebar from './Sidebar';
-import { getMqttClient } from '@/lib/mqttClient';
 
 export default function AppLayout() {
-  // Initialize MQTT connection on app load
-  useEffect(() => {
-    getMqttClient();
-  }, []);
-
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />

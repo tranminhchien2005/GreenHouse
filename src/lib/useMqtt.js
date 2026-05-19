@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getMqttClient, getMqttStatus, TOPICS } from './mqttClient';
+import { getMqttClient, getMqttStatus, subscribeTopic, TOPICS } from './mqttClient';
 import { useQueryClient } from '@tanstack/react-query';
-import { sensorService } from '@/services/sensorService';
 
 export function useMqttStatus() {
   const [status, setStatus] = useState('disconnected');
@@ -32,27 +31,43 @@ export function useMqttStatus() {
   return status;
 }
 
-// Hook to receive sensor data in real-time and persist to DB
+// Optional browser-side MQTT observer. Backend is responsible for persisting sensor data.
 export function useSensorData() {
   const queryClient = useQueryClient();
   const [latest, setLatest] = useState(null);
 
   useEffect(() => {
-    const client = getMqttClient();
+    getMqttClient(); // ensure connection exists
 
-    const handleMessage = async (topic, payload) => {
-      if (topic !== TOPICS.SENSORS) return;
+    const handleMessage = async (payload) => {
       try {
-        const data = JSON.parse(payload);
+        const data = JSON.parse(typeof payload === 'string' ? payload : payload?.toString?.() || '');
         setLatest(data);
-        // Save to database
-        await sensorService.create({
+
+        const nowRow = {
+          id: `mqtt_${Date.now()}`,
+          created_date: new Date().toISOString(),
           temperature: data.temperature,
           humidity: data.humidity,
           soil_moisture: data.soil_moisture,
           light: data.light,
           gas: data.gas,
+        };
+
+        queryClient.setQueriesData({ queryKey: ['sensorData', 'history'] }, (old) => {
+          const arr = Array.isArray(old) ? old : [];
+          return [nowRow, ...arr].slice(0, 50);
         });
+        queryClient.setQueriesData({ queryKey: ['sensorData', 'history', 50] }, (old) => {
+          const arr = Array.isArray(old) ? old : [];
+          return [nowRow, ...arr].slice(0, 50);
+        });
+        queryClient.setQueriesData({ queryKey: ['sensorData', 'latest', 1] }, (old) => {
+          const arr = Array.isArray(old) ? old : [];
+          return [nowRow, ...arr].slice(0, 1);
+        });
+
+        // Also refetch server-backed views when convenient
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['sensorData'] }),
           queryClient.invalidateQueries({ queryKey: ['alerts'] }),
@@ -64,12 +79,8 @@ export function useSensorData() {
       }
     };
 
-    if (!client._listeners_registered) {
-      client._listeners_registered = true;
-    }
-
-    client.on('message', handleMessage);
-    return () => client.off('message', handleMessage);
+    const unsubscribe = subscribeTopic(TOPICS.SENSORS, handleMessage);
+    return () => unsubscribe?.();
   }, [queryClient]);
 
   return latest;

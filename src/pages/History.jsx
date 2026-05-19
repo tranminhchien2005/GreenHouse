@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Table } from "lucide-react";
+import { BarChart3, Download, Table } from "lucide-react";
 import {
   AreaChart,
   Area,
@@ -12,6 +12,9 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -32,6 +35,7 @@ const METRICS = [
 const CHART_HEIGHT = 300;
 const HISTORY_LIMIT = 50;
 const SKELETON_ROWS = 8;
+const DAILY_STATS_SKELETON_ROWS = 4;
 
 function getCreatedAt(item) {
   return item?.created_at || item?.created_date || null;
@@ -42,6 +46,22 @@ function formatNumber(value) {
   const number = Number(value);
   if (!Number.isFinite(number)) return "--";
   return Number.isInteger(number) ? number.toString() : number.toFixed(1);
+}
+
+function formatDateOnly(value) {
+  if (!value) return "--";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-");
+    return `${day}/${month}/${year}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return format(date, "dd/MM/yyyy");
+}
+
+function toDateFilter(value, endOfDay = false) {
+  if (!value) return "";
+  return `${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}`;
 }
 
 function formatRowTime(value) {
@@ -75,14 +95,54 @@ function ChartTooltip({ active, payload, metric }) {
   );
 }
 
+function escapeCsvValue(value) {
+  if (value == null) return "";
+  const text = String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map((row) => row.map(escapeCsvValue).join(",")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function History() {
   const [metricKey, setMetricKey] = useState("temperature");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const metric = METRICS.find((m) => m.key === metricKey) || METRICS[0];
+  const filters = useMemo(() => ({
+    from: toDateFilter(fromDate),
+    to: toDateFilter(toDate, true),
+  }), [fromDate, toDate]);
 
   const { data: history = [], isLoading } = useQuery({
-    queryKey: ["sensorData", "history"],
-    queryFn: () => sensorService.listLatest(HISTORY_LIMIT),
+    queryKey: ["sensorData", "history", HISTORY_LIMIT, filters.from, filters.to],
+    queryFn: () => sensorService.listHistory({
+      limit: HISTORY_LIMIT,
+      from: filters.from,
+      to: filters.to,
+    }),
     refetchOnMount: "always",
+    refetchInterval: 5000,
+  });
+
+  const { data: dailyStats = [], isLoading: isDailyStatsLoading } = useQuery({
+    queryKey: ["sensorData", "stats", "daily", filters.from, filters.to],
+    queryFn: () => sensorService.dailyStats({
+      from: filters.from,
+      to: filters.to,
+    }),
+    refetchOnMount: "always",
+    refetchInterval: 10000,
   });
 
   const orderedHistory = useMemo(() => {
@@ -107,6 +167,23 @@ export default function History() {
       .filter(Boolean);
   }, [orderedHistory, metric.key]);
 
+  const handleExportCsv = () => {
+    const rows = [
+      ["time", "temperature", "humidity", "soil_moisture", "light", "gas"],
+      ...history.map((item) => [
+        getCreatedAt(item) || "",
+        item.temperature ?? "",
+        item.humidity ?? "",
+        item.soil_moisture ?? "",
+        item.light ?? "",
+        item.gas ?? "",
+      ]),
+    ];
+
+    const rangeLabel = fromDate || toDate ? `${fromDate || "start"}_${toDate || "now"}` : "latest";
+    downloadCsv(`greenhouse_sensor_history_${rangeLabel}.csv`, rows);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -115,6 +192,54 @@ export default function History() {
           Theo dõi dữ liệu môi trường đã ghi nhận
         </p>
       </div>
+
+      <Card className="p-5 border-0 shadow-sm">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+          <div>
+            <Label htmlFor="history-from">Từ ngày</Label>
+            <Input
+              id="history-from"
+              type="date"
+              value={fromDate}
+              onChange={(event) => setFromDate(event.target.value)}
+              max={toDate || undefined}
+              className="mt-1"
+            />
+          </div>
+          <div>
+            <Label htmlFor="history-to">Đến ngày</Label>
+            <Input
+              id="history-to"
+              type="date"
+              value={toDate}
+              onChange={(event) => setToDate(event.target.value)}
+              min={fromDate || undefined}
+              className="mt-1"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setFromDate("");
+                setToDate("");
+              }}
+              disabled={!fromDate && !toDate}
+            >
+              Xóa lọc
+            </Button>
+            <Button
+              type="button"
+              onClick={handleExportCsv}
+              disabled={isLoading || history.length === 0}
+            >
+              <Download className="w-4 h-4" />
+              Xuất CSV
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {/* Chart card */}
       <Card className="p-5 border-0 shadow-sm">
@@ -190,6 +315,60 @@ export default function History() {
             Chưa có dữ liệu
           </div>
         )}
+      </Card>
+
+      <Card className="p-5 border-0 shadow-sm">
+        <div className="flex items-center gap-2 mb-4">
+          <BarChart3 className="w-4 h-4 text-muted-foreground" />
+          <h2 className="text-base font-semibold">Thống kê theo ngày</h2>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider border-b">
+                <th className="px-3 py-2.5">Ngày</th>
+                <th className="px-3 py-2.5">Nhiệt độ TB</th>
+                <th className="px-3 py-2.5">Độ ẩm TB</th>
+                <th className="px-3 py-2.5">Đất TB</th>
+                <th className="px-3 py-2.5">Ánh sáng TB</th>
+                <th className="px-3 py-2.5">Gas max</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isDailyStatsLoading ? (
+                Array.from({ length: DAILY_STATS_SKELETON_ROWS }).map((_, idx) => (
+                  <tr key={`daily-skeleton-${idx}`} className="border-b last:border-b-0 animate-pulse">
+                    {Array.from({ length: 6 }).map((__, cellIdx) => (
+                      <td key={cellIdx} className="px-3 py-3">
+                        <div className="h-3 rounded bg-muted/70" />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : dailyStats.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                    Chưa có dữ liệu thống kê
+                  </td>
+                </tr>
+              ) : (
+                dailyStats.map((item) => (
+                  <tr key={item.date} className="border-b last:border-b-0 transition-colors hover:bg-muted/50">
+                    <td className="px-3 py-2.5 text-muted-foreground whitespace-nowrap">
+                      {formatDateOnly(item.date)}
+                    </td>
+                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_temperature)} °C</td>
+                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_humidity)} %</td>
+                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_soil_moisture)} %</td>
+                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_light)} lux</td>
+                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.max_gas)} ppm</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </Card>
 
       {/* Data table */}

@@ -2,14 +2,21 @@ import mqtt from 'mqtt';
 
 // HiveMQ Public Broker via WebSocket
 const BROKER_URL = 'wss://broker.hivemq.com:8884/mqtt';
+const TOPIC_PREFIX = (import.meta.env.VITE_MQTT_TOPIC_PREFIX || 'greenhouse/demo')
+  .trim()
+  .replace(/^\/+|\/+$/g, '');
+
+function topic(suffix) {
+  return `${TOPIC_PREFIX}/${suffix.replace(/^\/+|\/+$/g, '')}`;
+}
 
 // MQTT Topics
 export const TOPICS = {
-  SENSORS: 'greenhouse/sensors',
-  CONTROL_PUMP: 'greenhouse/control/pump',
-  CONTROL_FAN: 'greenhouse/control/fan',
-  CONTROL_MIST: 'greenhouse/control/mist',
-  CONTROL_LIGHT: 'greenhouse/control/light',
+  SENSORS: topic('sensors'),
+  CONTROL_PUMP: topic('control/pump'),
+  CONTROL_FAN: topic('control/fan'),
+  CONTROL_MIST: topic('control/mist'),
+  CONTROL_LIGHT: topic('control/light'),
 };
 
 let client = null;
@@ -27,8 +34,9 @@ export function getMqttClient() {
 
   client.on('connect', () => {
     console.log('[MQTT] Connected to HiveMQ broker');
-    // Subscribe to sensor data
-    client.subscribe(TOPICS.SENSORS, { qos: 1 });
+    Object.keys(listeners)
+      .filter((topic) => topic !== '*')
+      .forEach((topic) => client.subscribe(topic, { qos: 1 }));
   });
 
   client.on('message', (topic, payload) => {

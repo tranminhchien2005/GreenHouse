@@ -39,10 +39,13 @@ function createEntityStore(name) {
   const encodedName = encodeURIComponent(name);
 
   return {
-    async list(sortBy, limit) {
+    async list(sortBy, limit, extraParams = {}) {
       const params = new URLSearchParams();
       if (sortBy) params.set("sortBy", sortBy);
       if (typeof limit === "number") params.set("limit", String(limit));
+      for (const [key, value] of Object.entries(extraParams)) {
+        if (value != null && value !== "") params.set(key, String(value));
+      }
 
       const query = params.toString();
       return request(`/api/${encodedName}${query ? `?${query}` : ""}`);
@@ -91,8 +94,37 @@ export const appClient = {
   entities: {
     SensorData: createEntityStore("SensorData"),
     DeviceState: createEntityStore("DeviceState"),
+    DeviceCommandLog: createEntityStore("DeviceCommandLog"),
     AutomationRule: createEntityStore("AutomationRule"),
     Alert: createEntityStore("Alert"),
+    AlertThreshold: createEntityStore("AlertThreshold"),
+  },
+  devices: {
+    async command(deviceId, data) {
+      return request(`/api/DeviceState/${encodeURIComponent(deviceId)}/command`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
+  },
+  sensors: {
+    async dailyStats(params = {}) {
+      const query = new URLSearchParams();
+      for (const [key, value] of Object.entries(params)) {
+        if (value != null && value !== "") query.set(key, String(value));
+      }
+
+      const queryString = query.toString();
+      return request(`/api/SensorData/stats/daily${queryString ? `?${queryString}` : ""}`);
+    },
+  },
+  alerts: {
+    async markAllRead() {
+      return request("/api/Alert/read-all", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+    },
   },
   chatbot: {
     async listPlants() {

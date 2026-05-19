@@ -14,10 +14,3 @@ export const DEVICE_LABELS = {
   mist: 'Phun sương',
   light: 'Đèn',
 };
-
-export const ALERT_THRESHOLDS = {
-  temperatureHigh: 40,
-  soilMoistureLow: 30,
-  gasHigh: 300,
-};
-

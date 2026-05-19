@@ -31,7 +31,10 @@ const SENSOR_LABELS = {
 
 const OPERATOR_LABELS = {
   '>': 'Lớn hơn',
+  '>=': 'Lớn hơn hoặc bằng',
   '<': 'Nhỏ hơn',
+  '<=': 'Nhỏ hơn hoặc bằng',
+  '==': 'Bằng',
 };
 
 const LEVEL_BADGES = {
@@ -241,6 +244,38 @@ function ProfileTab() {
   );
 }
 
+function formatThresholdLabel(threshold) {
+  if (!threshold) return 'ngưỡng';
+  const sensor = SENSOR_LABELS[threshold.sensor_type] || threshold.sensor_type;
+  const op = OPERATOR_LABELS[threshold.operator] || threshold.operator;
+  return `${sensor} ${op} ${threshold.value}`;
+}
+
+function toastAfterThresholdUpdate(toast, queryClient, threshold, result) {
+  queryClient.invalidateQueries({ queryKey: ['alertThresholds'] });
+  queryClient.invalidateQueries({ queryKey: ['alerts'] });
+
+  const merged = threshold && result ? { ...threshold, ...result } : (result || threshold);
+  const label = formatThresholdLabel(merged);
+  const created = Number(result?.alerts_created ?? 0);
+
+  if (created > 0) {
+    const firstMessage = result?.alerts?.[0]?.message;
+    toast({
+      title: 'Đã lưu ngưỡng và tạo cảnh báo',
+      description: firstMessage
+        ? `${label}. ${firstMessage}`
+        : `${label}. Đã tạo ${created} cảnh báo mới — xem tại trang Cảnh báo.`,
+    });
+    return;
+  }
+
+  toast({
+    title: 'Cập nhật ngưỡng thành công',
+    description: `${label} đã được lưu. Chưa có cảnh báo mới (giá trị sensor gần nhất chưa vượt ngưỡng hoặc đang trong thời gian chờ 5 phút).`,
+  });
+}
+
 function ThresholdsTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -254,9 +289,9 @@ function ThresholdsTab() {
 
   const toggleMutation = useMutation({
     mutationFn: ({ id, active }) => patchThreshold(id, { active }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alertThresholds'] });
-      toast({ title: 'Cập nhật trạng thái thành công' });
+    onSuccess: (result, variables) => {
+      const threshold = thresholds.find((t) => t.id === variables.id);
+      toastAfterThresholdUpdate(toast, queryClient, threshold, result);
     },
     onError: (error) => {
       toast({
@@ -269,11 +304,11 @@ function ThresholdsTab() {
 
   const valueMutation = useMutation({
     mutationFn: ({ id, value }) => patchThreshold(id, { value }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alertThresholds'] });
+    onSuccess: (result, variables) => {
       setEditingId(null);
       setEditingValue('');
-      toast({ title: 'Cập nhật ngưỡng thành công' });
+      const threshold = thresholds.find((t) => t.id === variables.id);
+      toastAfterThresholdUpdate(toast, queryClient, threshold, result);
     },
     onError: (error) => {
       toast({

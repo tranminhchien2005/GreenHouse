@@ -9,6 +9,7 @@ import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SENSOR_LABELS } from '@/config/greenhouse';
 import { alertService } from '@/services/alertService';
+import { useToast } from '@/components/ui/use-toast';
 
 const typeConfig = {
   danger: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50', badge: 'bg-red-100 text-red-700', label: 'Nguy hiểm' },
@@ -18,11 +19,13 @@ const typeConfig = {
 
 export default function Alerts() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['alerts', 'list'],
     queryFn: () => alertService.listAll(),
     refetchOnMount: 'always',
+    refetchInterval: 3000,
   });
 
   const markReadMutation = useMutation({
@@ -31,11 +34,21 @@ export default function Alerts() {
   });
 
   const markAllReadMutation = useMutation({
-    mutationFn: async () => {
-      const unread = alerts.filter(a => !a.is_read);
-      await Promise.all(unread.map(a => alertService.markRead(a.id)));
+    mutationFn: () => alertService.markAllRead(),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast({
+        title: 'Đã đánh dấu tất cả cảnh báo là đã đọc',
+        description: `Đã cập nhật ${result?.updated ?? 0} cảnh báo.`,
+      });
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Không thể đánh dấu tất cả',
+        description: error?.message || 'Vui lòng kiểm tra backend rồi thử lại.',
+      });
+    },
   });
 
   const unreadCount = alerts.filter(a => !a.is_read).length;
@@ -50,9 +63,14 @@ export default function Alerts() {
           </p>
         </div>
         {unreadCount > 0 && (
-          <Button variant="outline" onClick={() => markAllReadMutation.mutate()} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => markAllReadMutation.mutate()}
+            disabled={markAllReadMutation.isPending}
+            className="gap-2"
+          >
             <CheckCircle2 className="w-4 h-4" />
-            Đánh dấu tất cả đã đọc
+            {markAllReadMutation.isPending ? 'Đang cập nhật...' : 'Đánh dấu tất cả đã đọc'}
           </Button>
         )}
       </div>
@@ -100,6 +118,7 @@ export default function Alerts() {
                           variant="ghost"
                           size="sm"
                           onClick={() => markReadMutation.mutate(alert.id)}
+                          disabled={markReadMutation.isPending && markReadMutation.variables === alert.id}
                           className="text-xs"
                         >
                           Đã đọc

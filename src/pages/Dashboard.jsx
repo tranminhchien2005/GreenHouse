@@ -5,9 +5,10 @@ import SensorCard from '@/components/dashboard/SensorCard';
 import DeviceStatusBar from '@/components/dashboard/DeviceStatusBar';
 import RecentAlerts from '@/components/dashboard/RecentAlerts';
 import MiniChart from '@/components/dashboard/MiniChart';
-import { useSensorData } from '@/lib/useMqtt';
+import ActivityLog from '@/components/dashboard/ActivityLog';
 import { getSensorWarning } from '@/services/alertRules';
 import { SENSOR_LABELS } from '@/config/greenhouse';
+import { appClient } from '@/api/appClient';
 import { alertService } from '@/services/alertService';
 import { deviceService } from '@/services/deviceService';
 import { sensorService } from '@/services/sensorService';
@@ -31,36 +32,51 @@ export default function Dashboard() {
     queryKey: ['sensorData', 'latest', 1],
     queryFn: () => sensorService.listLatest(1),
     refetchOnMount: 'always',
+    refetchInterval: 3000,
   });
 
   const { data: sensorHistory = [] } = useQuery({
     queryKey: ['sensorData', 'history', 50],
     queryFn: () => sensorService.listLatest(50),
     refetchOnMount: 'always',
+    refetchInterval: 5000,
   });
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices', 'list'],
     queryFn: () => deviceService.list(),
     refetchOnMount: 'always',
+    refetchInterval: 3000,
   });
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['alerts', 'recent', 10],
     queryFn: () => alertService.listRecent(10),
     refetchOnMount: 'always',
+    refetchInterval: 3000,
   });
 
-  // Live MQTT data takes priority over DB latest
-  const mqttLatest = useSensorData();
-  const latest = mqttLatest || latestSensorData[0] || {};
+  const { data: alertThresholds = [] } = useQuery({
+    queryKey: ['alertThresholds'],
+    queryFn: () => appClient.entities.AlertThreshold.list(),
+    refetchOnMount: 'always',
+    refetchInterval: 5000,
+  });
+
+  const { data: activityLogs = [] } = useQuery({
+    queryKey: ['deviceCommandLogs', 'recent', 10],
+    queryFn: () => deviceService.listCommandLogs(10),
+    refetchOnMount: 'always',
+    refetchInterval: 3000,
+  });
+
+  const latest = latestSensorData[0] || {};
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Tổng quan nhà kính</h1>
-        <p className="text-muted-foreground text-sm mt-1">Giám sát dữ liệu môi trường theo thời gian thực</p>
-        {mqttLatest && <span className="inline-flex items-center gap-1.5 text-xs text-green-600 font-medium mt-1"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse inline-block"/>Đang nhận dữ liệu MQTT</span>}
+        <p className="text-muted-foreground text-sm mt-1">Giám sát dữ liệu môi trường từ backend</p>
       </div>
 
       {/* Sensor Cards */}
@@ -73,7 +89,7 @@ export default function Dashboard() {
             value={latest[sensor.type]}
             unit={sensor.unit}
             color={sensor.color}
-            warning={getSensorWarning(sensor.type, latest[sensor.type])}
+            warning={getSensorWarning(sensor.type, latest[sensor.type], alertThresholds)}
           />
         ))}
       </div>
@@ -95,8 +111,10 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Alerts */}
-      <RecentAlerts alerts={alerts} />
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <RecentAlerts alerts={alerts} />
+        <ActivityLog logs={activityLogs} />
+      </div>
     </div>
   );
 }

@@ -1,42 +1,75 @@
-import { ALERT_THRESHOLDS } from '@/config/greenhouse';
+import { SENSOR_LABELS } from '@/config/greenhouse';
 
-export function getSensorWarning(type, value) {
-  if (value == null) return null;
-  if (type === 'temperature' && value > ALERT_THRESHOLDS.temperatureHigh) return 'Nhiệt độ quá cao!';
-  if (type === 'soil_moisture' && value < ALERT_THRESHOLDS.soilMoistureLow) return 'Đất quá khô!';
-  if (type === 'gas' && value > ALERT_THRESHOLDS.gasHigh) return 'Phát hiện khí gas!';
-  return null;
+const LEVEL_PRIORITY = {
+  danger: 3,
+  warning: 2,
+  info: 1,
+};
+
+function toNumber(value) {
+  if (value == null || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
-export function createSensorAlerts(data) {
+function isTriggered(operator, value, threshold) {
+  if (operator === '>') return value > threshold;
+  if (operator === '>=') return value >= threshold;
+  if (operator === '<') return value < threshold;
+  if (operator === '<=') return value <= threshold;
+  if (operator === '==') return value === threshold;
+  return false;
+}
+
+function getTriggeredThreshold(type, value, thresholds = []) {
+  const numericValue = toNumber(value);
+  if (numericValue == null || !Array.isArray(thresholds)) return null;
+
+  return thresholds
+    .filter((threshold) => (
+      threshold?.active !== false &&
+      threshold?.sensor_type === type &&
+      toNumber(threshold.value) != null &&
+      isTriggered(threshold.operator, numericValue, toNumber(threshold.value))
+    ))
+    .sort((a, b) => (LEVEL_PRIORITY[b.level] || 0) - (LEVEL_PRIORITY[a.level] || 0))[0] || null;
+}
+
+function getWarningMessage(threshold) {
+  const sensorLabel = SENSOR_LABELS[threshold.sensor_type] || threshold.sensor_type;
+  const levelPrefix = threshold.level === 'danger' ? 'Nguy hiểm: ' : '';
+  const directionLabel = {
+    '>': 'cao hơn',
+    '>=': 'cao hơn hoặc bằng',
+    '<': 'thấp hơn',
+    '<=': 'thấp hơn hoặc bằng',
+    '==': 'bằng',
+  }[threshold.operator] || 'kích hoạt ngưỡng';
+
+  return `${levelPrefix}${sensorLabel} ${directionLabel} ${threshold.value}`;
+}
+
+export function getSensorWarning(type, value, thresholds = []) {
+  const threshold = getTriggeredThreshold(type, value, thresholds);
+  if (!threshold) return null;
+  return getWarningMessage(threshold);
+}
+
+export function createSensorAlerts(data, thresholds = []) {
+  if (!data || !Array.isArray(thresholds)) return [];
+
   const alerts = [];
+  for (const sensorType of Object.keys(SENSOR_LABELS)) {
+    const value = data[sensorType];
+    const threshold = getTriggeredThreshold(sensorType, value, thresholds);
+    if (!threshold) continue;
 
-  if (data.soil_moisture != null && data.soil_moisture < ALERT_THRESHOLDS.soilMoistureLow) {
     alerts.push({
-      type: 'warning',
-      message: 'Độ ẩm đất thấp, cần tưới nước',
-      sensor_type: 'soil_moisture',
-      value: data.soil_moisture,
-      is_read: false,
-    });
-  }
-
-  if (data.temperature != null && data.temperature > ALERT_THRESHOLDS.temperatureHigh) {
-    alerts.push({
-      type: 'warning',
-      message: 'Nhiệt độ vượt ngưỡng cho phép',
-      sensor_type: 'temperature',
-      value: data.temperature,
-      is_read: false,
-    });
-  }
-
-  if (data.gas != null && data.gas > ALERT_THRESHOLDS.gasHigh) {
-    alerts.push({
-      type: 'danger',
-      message: 'Nguy hiểm! Phát hiện khí gas hoặc cháy',
-      sensor_type: 'gas',
-      value: data.gas,
+      type: threshold.level,
+      level: threshold.level,
+      message: getWarningMessage(threshold),
+      sensor_type: sensorType,
+      value,
       is_read: false,
     });
   }

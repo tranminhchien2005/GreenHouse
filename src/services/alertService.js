@@ -13,4 +13,7 @@ export const alertService = {
   markRead(id) {
     return appClient.entities.Alert.update(id, { is_read: true });
   },
+  markAllRead() {
+    return appClient.alerts.markAllRead();
+  },
 };
