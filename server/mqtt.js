@@ -2,18 +2,25 @@ import { randomUUID } from "node:crypto";
 import mqtt from "mqtt";
 
 const MQTT_BROKER_URL = process.env.MQTT_BROKER_URL || "mqtt://broker.hivemq.com:1883";
+const MQTT_USERNAME = process.env.MQTT_USERNAME || "";
+const MQTT_PASSWORD = process.env.MQTT_PASSWORD || "";
 let mqttClient = null;
 const subscriptions = new Map();
 
 function getMqttClient() {
   if (mqttClient) return mqttClient;
 
-  mqttClient = mqtt.connect(MQTT_BROKER_URL, {
+  const options = {
     clientId: `greenhouse_api_${randomUUID().slice(0, 8)}`,
     clean: true,
     connectTimeout: 10000,
     reconnectPeriod: 3000,
-  });
+  };
+
+  if (MQTT_USERNAME) options.username = MQTT_USERNAME;
+  if (MQTT_PASSWORD) options.password = MQTT_PASSWORD;
+
+  mqttClient = mqtt.connect(MQTT_BROKER_URL, options);
 
   mqttClient.on("connect", () => {
     console.log(`[MQTT] API connected to ${MQTT_BROKER_URL}`);

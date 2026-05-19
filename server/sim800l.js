@@ -1,6 +1,6 @@
 import { publishMqtt } from "./mqtt.js";
+import { SIM800L_SMS_TOPIC } from "./mqttTopics.js";
 
-const SIM800L_SMS_TOPIC = process.env.SIM800L_SMS_TOPIC || "greenhouse/alerts/sms";
 const sim800lPhoneNumbers = (process.env.SIM800L_PHONE_NUMBERS || "")
   .split(",")
   .map((phone) => phone.trim())

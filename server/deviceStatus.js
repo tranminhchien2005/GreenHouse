@@ -1,44 +1,62 @@
 import { subscribeMqtt } from "./mqtt.js";
-import { upsertDeviceByName } from "./repositories/deviceRepository.js";
-
-export const DEVICE_STATUS_TOPIC = process.env.DEVICE_STATUS_TOPIC || "greenhouse/device/status";
+import { DEVICE_STATUS_TOPIC } from "./mqttTopics.js";
+import { markLatestDeviceCommandConfirmed } from "./repositories/deviceCommandLogRepository.js";
+import { getDeviceByName, updateDeviceByName } from "./repositories/deviceRepository.js";
 
 let unsubscribeDeviceStatus = null;
+const validModes = new Set(["manual", "auto"]);
 
 function hasOwn(data, key) {
   return Object.prototype.hasOwnProperty.call(data, key);
-}
-
-function getDeviceName(payload = {}) {
-  return String(payload.device ?? payload.device_id ?? payload.name ?? payload.id ?? "").trim();
 }
 
 function getLastSeenAt(payload = {}, now = new Date().toISOString()) {
   if (hasOwn(payload, "last_seen_at")) return payload.last_seen_at;
   if (hasOwn(payload, "lastSeenAt")) return payload.lastSeenAt;
   if (hasOwn(payload, "last_seen")) return payload.last_seen;
+  if (hasOwn(payload, "timestamp")) return payload.timestamp;
   return now;
 }
 
-function mapStatusPayloadToDevice(payload = {}, now = new Date().toISOString()) {
-  const name = getDeviceName(payload);
-
-  if (!name) {
-    return null;
+function validateStatusPayload(payload = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return { valid: false, reason: "payload must be a JSON object" };
   }
 
-  const device = {
-    name,
-    type: payload.type || name,
+  if (!hasOwn(payload, "device")) {
+    return { valid: false, reason: "missing required field device" };
+  }
+
+  const deviceName = String(payload.device || "").trim();
+  if (!deviceName) {
+    return { valid: false, reason: "field device must be a non-empty string" };
+  }
+
+  if (!hasOwn(payload, "is_on")) {
+    return { valid: false, reason: "missing required field is_on" };
+  }
+
+  if (typeof payload.is_on !== "boolean") {
+    return { valid: false, reason: "field is_on must be a boolean" };
+  }
+
+  return {
+    valid: true,
+    deviceName,
+    isOn: payload.is_on,
+  };
+}
+
+function mapStatusPayloadToUpdate(payload = {}, now = new Date().toISOString()) {
+  const update = {
+    is_on: payload.is_on,
     last_seen_at: getLastSeenAt(payload, now),
   };
 
-  if (hasOwn(payload, "is_on")) device.is_on = payload.is_on;
-  if (hasOwn(payload, "isOn")) device.is_on = payload.isOn;
-  if (hasOwn(payload, "mode")) device.mode = payload.mode;
-  if (hasOwn(payload, "online")) device.online = payload.online;
+  if (validModes.has(payload.mode)) update.mode = payload.mode;
+  if (typeof payload.online === "boolean") update.online = payload.online;
 
-  return device;
+  return update;
 }
 
 function toLoggableDevice(device) {
@@ -49,14 +67,37 @@ function toLoggableDevice(device) {
 }
 
 export async function updateDeviceStateFromStatus(payload) {
-  const device = mapStatusPayloadToDevice(payload);
+  const validation = validateStatusPayload(payload);
 
-  if (!device) {
-    console.warn("[DeviceStatus] Ignored status payload without device name/id:", payload);
+  if (!validation.valid) {
+    console.warn(`[DeviceStatus] Ignored status payload: ${validation.reason}.`, payload);
     return null;
   }
 
-  const savedDevice = await upsertDeviceByName(device);
+  const existingDevice = await getDeviceByName(validation.deviceName);
+  if (!existingDevice) {
+    console.warn(
+      `[DeviceStatus] Ignored status payload: device "${validation.deviceName}" not found in database.`,
+      payload,
+    );
+    return null;
+  }
+
+  const savedDevice = await updateDeviceByName(
+    existingDevice.name,
+    mapStatusPayloadToUpdate(payload),
+  );
+  const confirmedCommand = await markLatestDeviceCommandConfirmed({
+    device_name: savedDevice.name,
+    is_on: validation.isOn,
+  });
+
+  if (confirmedCommand) {
+    console.log(
+      `[DeviceStatus] Confirmed command ${confirmedCommand.command} for ${savedDevice.name} from device status.`,
+    );
+  }
+
   return toLoggableDevice(savedDevice);
 }
 

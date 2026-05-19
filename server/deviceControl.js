@@ -1,6 +1,6 @@
-import { DEVICE_CONTROL_TOPICS } from "./automation.js";
+import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
 import { publishMqtt } from "./mqtt.js";
-import { query } from "./database.js";
+import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
 import { upsertDeviceByName } from "./repositories/deviceRepository.js";
 
 export const DEVICE_LABELS = {
@@ -33,8 +33,13 @@ export function toDeviceAction(isOn) {
   return isOn ? "turn_on" : "turn_off";
 }
 
-export function toDevicePayload(isOn) {
-  return isOn ? "1" : "0";
+export function toDevicePayload({ deviceId, isOn, source = "manual" }) {
+  return {
+    device: deviceId,
+    is_on: isOn,
+    action: toDeviceAction(isOn),
+    source,
+  };
 }
 
 export function normalizeDeviceCommand({ deviceId, action, isOn }) {
@@ -67,28 +72,50 @@ export async function executeDeviceCommand({ deviceId, isOn, requestedBy = null,
   }
 
   const topic = DEVICE_CONTROL_TOPICS[command.deviceId];
-  await publishMqtt(topic, toDevicePayload(command.isOn), { qos: 1 });
-
   const device = await upsertDeviceByName({
     name: command.deviceId,
     type: command.deviceId,
-    is_on: command.isOn,
-    mode: "manual",
+    ...(source === "manual" ? { mode: "manual" } : {}),
+  });
+  let commandLog = null;
+  const payload = toDevicePayload({
+    deviceId: command.deviceId,
+    isOn: command.isOn,
+    source,
   });
 
-  await query(
-    `
-      INSERT INTO device_command_logs (device_id, device_name, command, source, requested_by, mqtt_published)
-      VALUES ($1, $2, $3, $4, $5, true)
-    `,
-    [device.id, device.name, command.action, source, requestedBy],
-  );
+  try {
+    await publishMqtt(topic, payload, { qos: 1 });
+    commandLog = await createDeviceCommandLog({
+      device_id: device.id,
+      device_name: device.name,
+      command: command.action,
+      source,
+      requested_by: requestedBy,
+      mqtt_published: true,
+      device_confirmed: false,
+    });
+  } catch (error) {
+    await createDeviceCommandLog({
+      device_id: device.id,
+      device_name: device.name,
+      command: command.action,
+      source,
+      requested_by: requestedBy,
+      mqtt_published: false,
+      device_confirmed: false,
+    }).catch((logError) => {
+      console.error("[DeviceControl] Failed to record MQTT publish failure:", logError.message);
+    });
+    throw error;
+  }
 
   return {
     device,
+    commandLog,
     topic,
-    payload: toDevicePayload(command.isOn),
+    payload,
     action: command.action,
-    message: `Đã gửi lệnh ${getActionLabel(command.isOn).toLowerCase()} ${getDeviceLabel(command.deviceId)}.`,
+    message: `Đã gửi lệnh ${getActionLabel(command.isOn).toLowerCase()} ${getDeviceLabel(command.deviceId)}, đang chờ thiết bị phản hồi.`,
   };
 }

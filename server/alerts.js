@@ -1,5 +1,6 @@
 import { pool } from "./database.js";
 import { createAlert, findRecentSimilarAlert } from "./repositories/alertRepository.js";
+import { getLatestSensorReading } from "./repositories/sensorRepository.js";
 
 export const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 const THRESHOLD_CACHE_MS = 60 * 1000;
@@ -13,7 +14,8 @@ const SENSOR_META = {
 };
 
 const validLevels = new Set(["info", "warning", "danger"]);
-const validOperators = new Set([">", "<"]);
+export const ALERT_THRESHOLD_OPERATORS = [">", ">=", "<", "<=", "=="];
+const validOperators = new Set(ALERT_THRESHOLD_OPERATORS);
 
 let thresholdCache = null;
 let thresholdCacheAt = 0;
@@ -26,6 +28,18 @@ function toNumber(value) {
 function getAlertLevel(alert) {
   const level = String(alert?.level ?? alert?.severity ?? alert?.type ?? "").toLowerCase();
   return validLevels.has(level) ? level : "warning";
+}
+
+function normalizeOperator(operator) {
+  return String(operator || "").trim();
+}
+
+export function isValidAlertThresholdOperator(operator) {
+  return validOperators.has(normalizeOperator(operator));
+}
+
+export function getAlertThresholdOperatorErrorMessage(operator) {
+  return `operator không hợp lệ: ${operator ?? ""}. Giá trị hợp lệ: ${ALERT_THRESHOLD_OPERATORS.join(", ")}`;
 }
 
 function getCooldownSince(now) {
@@ -86,16 +100,23 @@ async function loadThresholds() {
   );
 
   thresholdCache = result.rows
-    .map((row) => ({
-      id: row.id,
-      sensor_type: row.sensor_type,
-      operator: row.operator,
-      value: Number(row.value),
-      level: validLevels.has(String(row.level).toLowerCase())
-        ? String(row.level).toLowerCase()
-        : "warning",
-    }))
-    .filter((t) => validOperators.has(t.operator) && Number.isFinite(t.value));
+    .map((row) => {
+      const operator = normalizeOperator(row.operator);
+      if (!isValidAlertThresholdOperator(operator)) {
+        throw new Error(getAlertThresholdOperatorErrorMessage(row.operator));
+      }
+
+      return {
+        id: row.id,
+        sensor_type: row.sensor_type,
+        operator,
+        value: Number(row.value),
+        level: validLevels.has(String(row.level).toLowerCase())
+          ? String(row.level).toLowerCase()
+          : "warning",
+      };
+    })
+    .filter((t) => Number.isFinite(t.value));
   thresholdCacheAt = now;
 
   return thresholdCache;
@@ -104,7 +125,13 @@ async function loadThresholds() {
 function buildAlertMessage({ sensor_type, operator, value, threshold, level }) {
   const meta = SENSOR_META[sensor_type] || { label: sensor_type, unit: "" };
   const unit = meta.unit ? ` ${meta.unit}` : "";
-  const direction = operator === ">" ? "vượt ngưỡng" : "dưới ngưỡng";
+  const direction = {
+    ">": "vượt ngưỡng",
+    ">=": "đạt hoặc vượt ngưỡng",
+    "<": "dưới ngưỡng",
+    "<=": "bằng hoặc dưới ngưỡng",
+    "==": "bằng ngưỡng",
+  }[operator];
   const prefix = level === "danger" ? "Nguy hiểm! " : "";
 
   return `${prefix}${meta.label} ${direction}. Giá trị: ${value}${unit}, ngưỡng: ${operator} ${threshold}${unit}`;
@@ -112,8 +139,11 @@ function buildAlertMessage({ sensor_type, operator, value, threshold, level }) {
 
 function isThresholdTriggered(operator, value, threshold) {
   if (operator === ">") return value > threshold;
+  if (operator === ">=") return value >= threshold;
   if (operator === "<") return value < threshold;
-  return false;
+  if (operator === "<=") return value <= threshold;
+  if (operator === "==") return value === threshold;
+  throw new Error(getAlertThresholdOperatorErrorMessage(operator));
 }
 
 async function createAlertIfAllowed(alertData, now) {
@@ -130,6 +160,22 @@ async function createAlertIfAllowed(alertData, now) {
 
   const alert = await createAlert(candidate);
   return { alert: toLegacyAlert(alert), created: true };
+}
+
+export async function evaluateAlertsForLatestReading(now = new Date().toISOString()) {
+  const reading = await getLatestSensorReading();
+  if (!reading) return [];
+
+  const sensorData = {
+    temperature: reading.temperature,
+    humidity: reading.humidity,
+    soil_moisture: reading.soil_moisture,
+    light: reading.light,
+    gas: reading.gas,
+    created_date: reading.created_at,
+  };
+
+  return createAlertsForSensorData(sensorData, now);
 }
 
 export async function createAlertsForSensorData(sensorData, now = new Date().toISOString()) {

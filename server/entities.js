@@ -2,13 +2,31 @@ import { requireUser } from "./auth.js";
 import { pool } from "./database.js";
 import { readBody, sendJson } from "./httpUtils.js";
 import { publishSim800lSmsRequest } from "./sim800l.js";
-import { createAlertsForSensorData, invalidateThresholdCache, toLegacyAlert } from "./alerts.js";
-import { publishAutomationCommand, runAutomationRulesForSensorData } from "./automation.js";
+import {
+  ALERT_THRESHOLD_OPERATORS,
+  evaluateAlertsForLatestReading,
+  getAlertThresholdOperatorErrorMessage,
+  invalidateThresholdCache,
+  isValidAlertThresholdOperator,
+  toLegacyAlert,
+} from "./alerts.js";
+import { executeDeviceCommand, normalizeDeviceCommand } from "./deviceControl.js";
+import {
+  evaluateAutomationRuleForSensorData,
+  publishAutomationCommand,
+} from "./automation.js";
+import {
+  hasAnyValidSensorValue,
+  ingestSensorReading,
+  toLegacySensorData,
+  toSensorRepositoryData,
+} from "./sensorIngestion.js";
 import {
   createAlert,
   deleteAlert,
   getAlertById,
   listAlerts,
+  markAllAlertsAsRead,
   updateAlert,
 } from "./repositories/alertRepository.js";
 import {
@@ -27,13 +45,25 @@ import {
   upsertDeviceByName,
 } from "./repositories/deviceRepository.js";
 import {
-  createSensorReading,
+  getDeviceCommandStatus,
+  listDeviceCommandLogs,
+} from "./repositories/deviceCommandLogRepository.js";
+import {
   deleteSensorReading,
+  getLatestSensorReading,
   getSensorReadingById,
+  getDailyStats,
   listSensorReadings,
 } from "./repositories/sensorRepository.js";
 
-const allowedEntities = new Set(["SensorData", "DeviceState", "AutomationRule", "Alert", "AlertThreshold"]);
+const allowedEntities = new Set([
+  "SensorData",
+  "DeviceState",
+  "DeviceCommandLog",
+  "AutomationRule",
+  "Alert",
+  "AlertThreshold",
+]);
 
 function sortItems(items, sortBy) {
   if (!sortBy) return items;
@@ -97,55 +127,6 @@ function toDeviceRepositoryData(data = {}) {
   }
 
   return mapped;
-}
-
-function toNumberOrNull(value) {
-  if (value == null || value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function toSensorRepositoryData(data = {}) {
-  const mapped = {
-    temperature: data.temperature ?? data.temp,
-    humidity: data.humidity,
-    soil_moisture: data.soil_moisture ?? data.soilMoisture ?? data.soil,
-    light: data.light ?? data.lux,
-    gas: data.gas ?? data.gasValue,
-    created_at: data.created_at ?? data.createdAt ?? data.timestamp ?? data.created_date,
-  };
-
-  for (const key of Object.keys(mapped)) {
-    if (mapped[key] === undefined) delete mapped[key];
-  }
-
-  return mapped;
-}
-
-function hasAnyValidSensorValue(data = {}) {
-  return [
-    data.temperature ?? data.temp,
-    data.humidity,
-    data.soil_moisture ?? data.soilMoisture ?? data.soil,
-    data.light ?? data.lux,
-    data.gas ?? data.gasValue,
-  ].some((value) => toNumberOrNull(value) != null);
-}
-
-function toLegacySensorData(reading) {
-  if (!reading) return null;
-
-  return {
-    id: reading.id,
-    temperature: reading.temperature,
-    humidity: reading.humidity,
-    soil_moisture: reading.soil_moisture,
-    soilMoisture: reading.soil_moisture,
-    light: reading.light,
-    gas: reading.gas,
-    created_at: reading.created_at,
-    created_date: reading.created_at,
-  };
 }
 
 function getSensorSortOptions(url) {
@@ -306,15 +287,185 @@ function getAutomationSortOptions(url) {
   };
 }
 
-async function runSensorSideEffects(sensorData) {
-  const now = sensorData.created_date || new Date().toISOString();
-  const createdAlerts = await createAlertsForSensorData(sensorData, now);
-  const automationCommands = await runAutomationRulesForSensorData(sensorData, now);
+const sensorFieldAliases = [
+  "temperature",
+  "temp",
+  "humidity",
+  "soil_moisture",
+  "soilMoisture",
+  "soil",
+  "light",
+  "lux",
+  "gas",
+  "gasValue",
+];
 
-  return { createdAlerts, automationCommands };
+function hasAnySensorField(data = {}) {
+  if (!data || typeof data !== "object") return false;
+
+  return sensorFieldAliases.some((field) => Object.prototype.hasOwnProperty.call(data, field));
 }
 
-async function handleSensorData(req, res, url, id) {
+function getAutomationTestSensorPayload(body = {}) {
+  if (!body || typeof body !== "object") return {};
+
+  const candidates = [
+    body.sensorData,
+    body.sensor_data,
+    body.sensor,
+    body.payload,
+    body.reading,
+    body,
+  ].filter((candidate) => candidate && typeof candidate === "object");
+
+  return candidates.find(hasAnySensorField) || candidates[0] || {};
+}
+
+function parseBoolean(value) {
+  if (typeof value === "boolean") return value;
+  if (value === 1) return true;
+  if (value === 0) return false;
+
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") return true;
+  if (normalized === "false" || normalized === "0" || normalized === "no") return false;
+  return false;
+}
+
+function toAutomationTestSensorData(data = {}) {
+  const normalized = toSensorRepositoryData(data);
+
+  return {
+    temperature: normalized.temperature ?? null,
+    humidity: normalized.humidity ?? null,
+    soil_moisture: normalized.soil_moisture ?? null,
+    soilMoisture: normalized.soil_moisture ?? null,
+    light: normalized.light ?? null,
+    gas: normalized.gas ?? null,
+    created_at: normalized.created_at ?? null,
+    created_date: normalized.created_at ?? null,
+  };
+}
+
+async function resolveAutomationTestSensorData(body = {}) {
+  const payload = getAutomationTestSensorPayload(body);
+
+  if (hasAnySensorField(payload)) {
+    if (!hasAnyValidSensorValue(payload)) {
+      const error = new Error("Sensor payload must include at least one valid numeric sensor value");
+      error.status = 400;
+      throw error;
+    }
+
+    return {
+      source: "payload",
+      sensorData: toAutomationTestSensorData(payload),
+    };
+  }
+
+  const latest = await getLatestSensorReading();
+  if (!latest) {
+    const error = new Error("No latest sensor reading available");
+    error.status = 404;
+    throw error;
+  }
+
+  return {
+    source: "latest",
+    sensorData: toLegacySensorData(latest),
+  };
+}
+
+function toAutomationTestResult(evaluation, { confirm, published }) {
+  return {
+    matched: evaluation.matched,
+    targetDevice: evaluation.targetDevice,
+    action: evaluation.action,
+    skippedReason: evaluation.skippedReason,
+    confirm,
+    published,
+    wouldPublish: Boolean(evaluation.command),
+    mqttTopic: evaluation.command?.topic || evaluation.topic || null,
+    sensor_type: evaluation.sensorType,
+    sensorValue: evaluation.sensorValue,
+    operator: evaluation.operator,
+    threshold: evaluation.threshold,
+    deviceMode: evaluation.device?.mode ?? null,
+  };
+}
+
+function getDeviceCommandLogSortOptions(url) {
+  const rawSortBy = url.searchParams.get("sortBy");
+  const sortOrderParam = url.searchParams.get("sortOrder");
+  const isDesc = rawSortBy?.startsWith("-");
+  const sortByValue = isDesc ? rawSortBy.slice(1) : rawSortBy;
+  const sortFieldAliases = {
+    created_date: "created_at",
+    deviceName: "device_name",
+  };
+
+  return {
+    limit: url.searchParams.get("limit"),
+    page: url.searchParams.get("page"),
+    device_name: url.searchParams.get("device_name") ?? url.searchParams.get("deviceName"),
+    source: url.searchParams.get("source"),
+    sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
+    sortOrder: isDesc ? "desc" : sortOrderParam,
+  };
+}
+
+function toLegacyDeviceCommandLog(log) {
+  if (!log) return null;
+
+  const commandStatus = getDeviceCommandStatus(log);
+  return {
+    id: log.id,
+    device_id: log.device_id,
+    device_name: log.device_name,
+    deviceName: log.device_name,
+    command: log.command,
+    source: log.source,
+    mqtt_published: log.mqtt_published,
+    mqttPublished: log.mqtt_published,
+    device_confirmed: log.device_confirmed,
+    deviceConfirmed: log.device_confirmed,
+    command_status: commandStatus,
+    commandStatus,
+    created_at: log.created_at,
+    created_date: log.created_at,
+  };
+}
+
+function toLegacyDailySensorStats(row) {
+  if (!row) return null;
+
+  return {
+    date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : row.date,
+    avg_temperature: row.avg_temperature == null ? null : Number(row.avg_temperature),
+    min_temperature: row.min_temperature == null ? null : Number(row.min_temperature),
+    max_temperature: row.max_temperature == null ? null : Number(row.max_temperature),
+    avg_humidity: row.avg_humidity == null ? null : Number(row.avg_humidity),
+    min_humidity: row.min_humidity == null ? null : Number(row.min_humidity),
+    max_humidity: row.max_humidity == null ? null : Number(row.max_humidity),
+    avg_soil_moisture: row.avg_soil_moisture == null ? null : Number(row.avg_soil_moisture),
+    min_soil_moisture: row.min_soil_moisture == null ? null : Number(row.min_soil_moisture),
+    max_soil_moisture: row.max_soil_moisture == null ? null : Number(row.max_soil_moisture),
+    avg_light: row.avg_light == null ? null : Number(row.avg_light),
+    min_light: row.min_light == null ? null : Number(row.min_light),
+    max_light: row.max_light == null ? null : Number(row.max_light),
+    avg_gas: row.avg_gas == null ? null : Number(row.avg_gas),
+    min_gas: row.min_gas == null ? null : Number(row.min_gas),
+    max_gas: row.max_gas == null ? null : Number(row.max_gas),
+  };
+}
+
+async function handleSensorData(req, res, url, id, action) {
+  if (req.method === "GET" && id === "stats" && action === "daily") {
+    const stats = await getDailyStats(getSensorSortOptions(url));
+    sendJson(res, 200, stats.map(toLegacyDailySensorStats));
+    return true;
+  }
+
   if (req.method === "GET" && !id) {
     const readings = await listSensorReadings(getSensorSortOptions(url));
     sendJson(res, 200, readings.map(toLegacySensorData));
@@ -340,23 +491,8 @@ async function handleSensorData(req, res, url, id) {
       return true;
     }
 
-    const reading = await createSensorReading(toSensorRepositoryData(data));
-    const nextItem = toLegacySensorData(reading);
-    const mutation = await runSensorSideEffects(nextItem);
-
-    for (const alert of mutation.createdAlerts) {
-      publishSim800lSmsRequest(alert).catch((error) => {
-        console.error("[SIM800L SMS] Failed to publish alert:", error.message);
-      });
-    }
-
-    for (const command of mutation.automationCommands) {
-      publishAutomationCommand(command).catch((error) => {
-        console.error("[Automation] Failed to publish command:", error.message);
-      });
-    }
-
-    sendJson(res, 201, nextItem);
+    const { reading } = await ingestSensorReading(data);
+    sendJson(res, 201, reading);
     return true;
   }
 
@@ -385,6 +521,16 @@ async function handleSensorData(req, res, url, id) {
 }
 
 async function handleAlert(req, res, url, id, action) {
+  if (id === "read-all" && req.method === "POST") {
+    const updatedAlerts = await markAllAlertsAsRead();
+    sendJson(res, 200, {
+      success: true,
+      updated: updatedAlerts.length,
+      items: updatedAlerts.map(toLegacyAlert),
+    });
+    return true;
+  }
+
   if (id && action === "read" && ["POST", "PATCH"].includes(req.method)) {
     const updatedAlert = await updateAlert(id, { is_read: true });
     if (!updatedAlert) {
@@ -461,7 +607,72 @@ async function handleAlert(req, res, url, id, action) {
   return false;
 }
 
-async function handleAutomationRule(req, res, url, id) {
+async function handleAutomationRuleTest(req, res, url, id) {
+  const body = await readBody(req);
+  const rule = await getAutomationRuleById(id);
+  if (!rule) {
+    sendJson(res, 404, { message: "Item not found" });
+    return true;
+  }
+
+  let sensorData;
+  let source;
+  try {
+    const resolved = await resolveAutomationTestSensorData(body);
+    sensorData = resolved.sensorData;
+    source = resolved.source;
+  } catch (error) {
+    sendJson(res, error.status || 400, { message: error.message || "Invalid sensor payload" });
+    return true;
+  }
+
+  const confirm = parseBoolean(body.confirm ?? url.searchParams.get("confirm"));
+  const now = new Date().toISOString();
+  const evaluation = await evaluateAutomationRuleForSensorData(rule, sensorData, {
+    now,
+    prioritizeDeviceMode: true,
+  });
+  let published = false;
+
+  if (confirm && evaluation.command) {
+    try {
+      await updateAutomationRule(rule.id, { last_triggered_at: now });
+      await publishAutomationCommand(evaluation.command);
+      published = true;
+    } catch (error) {
+      sendJson(res, 502, {
+        success: false,
+        message: "Không thể publish MQTT cho automation test",
+        error: error.message,
+        source,
+        sensor: sensorData,
+        rule: toLegacyAutomationRule(rule),
+        result: toAutomationTestResult(evaluation, { confirm, published: false }),
+      });
+      return true;
+    }
+  }
+
+  sendJson(res, 200, {
+    success: true,
+    source,
+    sensor: sensorData,
+    rule: toLegacyAutomationRule(rule),
+    result: toAutomationTestResult(evaluation, { confirm, published }),
+  });
+  return true;
+}
+
+async function handleAutomationRule(req, res, url, id, action) {
+  if (id && action === "test") {
+    if (req.method !== "POST") {
+      sendJson(res, 405, { message: "Method not allowed" });
+      return true;
+    }
+
+    return handleAutomationRuleTest(req, res, url, id);
+  }
+
   if (req.method === "GET" && !id) {
     const rules = await listAutomationRules(getAutomationSortOptions(url));
     sendJson(res, 200, rules.map(toLegacyAutomationRule));
@@ -529,7 +740,41 @@ async function handleAutomationRule(req, res, url, id) {
   return false;
 }
 
-async function handleDeviceState(req, res, url, id) {
+async function handleDeviceState(req, res, url, id, action) {
+  if (id && action === "command" && req.method === "POST") {
+    const body = await readBody(req);
+    const command = normalizeDeviceCommand({
+      ...body,
+      deviceId: body.deviceId ?? body.device_id ?? id,
+    });
+
+    if (!command) {
+      sendJson(res, 400, { message: "Lệnh thiết bị không hợp lệ" });
+      return true;
+    }
+
+    try {
+      const result = await executeDeviceCommand({
+        deviceId: command.deviceId,
+        isOn: command.isOn,
+        requestedBy: req.user?.id,
+        source: "manual",
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: result.message,
+        device: toLegacyDeviceState(result.device),
+      });
+    } catch (error) {
+      sendJson(res, error.status || 500, {
+        message: error.status ? error.message : "Không thể gửi lệnh thiết bị lúc này",
+      });
+    }
+
+    return true;
+  }
+
   if (req.method === "GET" && !id) {
     const sortBy = url.searchParams.get("sortBy");
     const limitParam = url.searchParams.get("limit");
@@ -572,6 +817,19 @@ async function handleDeviceState(req, res, url, id) {
   }
 
   return false;
+}
+
+async function handleDeviceCommandLog(req, res, url, id) {
+  if (req.method === "GET" && !id) {
+    const logs = await listDeviceCommandLogs(getDeviceCommandLogSortOptions(url));
+    sendJson(res, 200, logs.map(toLegacyDeviceCommandLog));
+    return true;
+  }
+
+  sendJson(res, id ? 404 : 405, {
+    message: id ? "Item not found" : "Method not allowed",
+  });
+  return true;
 }
 
 function toLegacyThreshold(row) {
@@ -621,6 +879,19 @@ async function handleAlertThreshold(req, res, id) {
       fields.push(`value = $${values.length}`);
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "operator")) {
+      const operator = String(body.operator || "").trim();
+      if (!isValidAlertThresholdOperator(operator)) {
+        sendJson(res, 400, {
+          message: getAlertThresholdOperatorErrorMessage(body.operator),
+          allowed_operators: ALERT_THRESHOLD_OPERATORS,
+        });
+        return true;
+      }
+      values.push(operator);
+      fields.push(`operator = $${values.length}`);
+    }
+
     if (Object.prototype.hasOwnProperty.call(body, "active")) {
       if (typeof body.active !== "boolean") {
         sendJson(res, 400, { message: "active phải là boolean" });
@@ -649,7 +920,24 @@ async function handleAlertThreshold(req, res, id) {
     }
 
     invalidateThresholdCache();
-    sendJson(res, 200, toLegacyThreshold(result.rows[0]));
+
+    let createdAlerts = [];
+    try {
+      createdAlerts = await evaluateAlertsForLatestReading();
+      for (const alert of createdAlerts) {
+        publishSim800lSmsRequest(alert).catch((error) => {
+          console.error("[SIM800L SMS] Failed to publish alert:", error.message);
+        });
+      }
+    } catch (error) {
+      console.error("[AlertThreshold] Failed to evaluate latest reading:", error.message);
+    }
+
+    sendJson(res, 200, {
+      ...toLegacyThreshold(result.rows[0]),
+      alerts_created: createdAlerts.length,
+      alerts: createdAlerts,
+    });
     return true;
   }
 
@@ -675,11 +963,15 @@ export async function handleEntity(req, res, url, parts) {
   if (!user) return true;
 
   if (entityName === "DeviceState") {
-    return handleDeviceState(req, res, url, id);
+    return handleDeviceState(req, res, url, id, action);
+  }
+
+  if (entityName === "DeviceCommandLog") {
+    return handleDeviceCommandLog(req, res, url, id);
   }
 
   if (entityName === "SensorData") {
-    return handleSensorData(req, res, url, id);
+    return handleSensorData(req, res, url, id, action);
   }
 
   if (entityName === "Alert") {
@@ -687,7 +979,7 @@ export async function handleEntity(req, res, url, parts) {
   }
 
   if (entityName === "AutomationRule") {
-    return handleAutomationRule(req, res, url, id);
+    return handleAutomationRule(req, res, url, id, action);
   }
 
   sendJson(res, 404, { message: "Entity not found" });

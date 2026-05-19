@@ -7,6 +7,7 @@ import { handleAuth } from "./auth.js";
 import { handleChatbot } from "./chatbot.js";
 import { handleEntity } from "./entities.js";
 import { startDeviceStatusMqttListener } from "./deviceStatus.js";
+import { startSensorMqttListener } from "./sensorMqtt.js";
 import { getRouteParts, sendJson, sendNoContent } from "./httpUtils.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -83,6 +84,7 @@ try {
 }
 
 startDeviceStatusMqttListener();
+startSensorMqttListener();
 
 server.on("error", (err) => {
   if (err.code === "EADDRINUSE") {

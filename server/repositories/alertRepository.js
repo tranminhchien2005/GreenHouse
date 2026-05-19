@@ -192,6 +192,19 @@ export async function markAlertAsRead(id) {
   return result.rows[0] || null;
 }
 
+export async function markAllAlertsAsRead() {
+  const result = await query(
+    `
+      UPDATE alerts
+      SET is_read = TRUE
+      WHERE is_read = FALSE
+      RETURNING ${alertColumns}
+    `,
+  );
+
+  return result.rows;
+}
+
 export async function updateAlert(id, data) {
   const fields = getUpdateFields(data);
 

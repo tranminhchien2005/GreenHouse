@@ -1,15 +1,10 @@
 import { publishMqtt } from "./mqtt.js";
+import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
 import { getActiveAutomationRules, updateAutomationRule } from "./repositories/automationRepository.js";
-import { upsertDeviceByName } from "./repositories/deviceRepository.js";
+import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
+import { getDeviceByName } from "./repositories/deviceRepository.js";
 
 export const AUTOMATION_COOLDOWN_MS = Number(process.env.AUTOMATION_COOLDOWN_MS || 60_000);
-
-export const DEVICE_CONTROL_TOPICS = {
-  pump: "greenhouse/control/pump",
-  fan: "greenhouse/control/fan",
-  mist: "greenhouse/control/mist",
-  light: "greenhouse/control/light",
-};
 
 const conditionOperators = {
   above: ">",
@@ -51,37 +46,150 @@ function getLastTriggeredDate(rule) {
   return rule?.last_triggered_date || rule?.last_triggered_at;
 }
 
-function matchesCondition(value, rule, threshold) {
+function evaluateRuleCondition(value, rule, threshold) {
   const operator = getRuleOperator(rule);
-  if (!operator) return false;
+  if (!operator) {
+    return {
+      matched: false,
+      operator: null,
+      sensorValue: null,
+      threshold: toNumber(threshold),
+      skippedReason: "invalid_operator",
+    };
+  }
 
   const numericValue = toNumber(value);
   const numericThreshold = toNumber(threshold);
-  if (numericValue == null || numericThreshold == null) return false;
+  if (numericValue == null) {
+    return {
+      matched: false,
+      operator,
+      sensorValue: null,
+      threshold: numericThreshold,
+      skippedReason: "sensor_value_missing",
+    };
+  }
+  if (numericThreshold == null) {
+    return {
+      matched: false,
+      operator,
+      sensorValue: numericValue,
+      threshold: null,
+      skippedReason: "invalid_threshold",
+    };
+  }
 
-  if (operator === ">") return numericValue > numericThreshold;
-  if (operator === ">=") return numericValue >= numericThreshold;
-  if (operator === "<") return numericValue < numericThreshold;
-  if (operator === "<=") return numericValue <= numericThreshold;
-  return numericValue === numericThreshold;
+  let matched = false;
+  if (operator === ">") matched = numericValue > numericThreshold;
+  else if (operator === ">=") matched = numericValue >= numericThreshold;
+  else if (operator === "<") matched = numericValue < numericThreshold;
+  else if (operator === "<=") matched = numericValue <= numericThreshold;
+  else matched = numericValue === numericThreshold;
+
+  return {
+    matched,
+    operator,
+    sensorValue: numericValue,
+    threshold: numericThreshold,
+    skippedReason: matched ? null : "condition_not_matched",
+  };
 }
 
-async function updateDeviceStateForAutomation(rule) {
-  const targetDevice = getTargetDevice(rule);
-  const isOn = rule.action === "turn_on";
+function buildAutomationCommand({ rule, targetDevice, sensorValue, threshold, device }) {
+  return {
+    topic: DEVICE_CONTROL_TOPICS[targetDevice],
+    payload: {
+      device: targetDevice,
+      is_on: rule.action === "turn_on",
+      action: rule.action,
+      source: "automation",
+      rule_id: rule.id,
+      sensor_type: rule.sensor_type,
+      value: sensorValue,
+      threshold,
+    },
+    device,
+  };
+}
 
-  return upsertDeviceByName({
-    name: targetDevice,
-    type: targetDevice,
-    is_on: isOn,
+export async function evaluateAutomationRuleForSensorData(rule, sensorData, options = {}) {
+  const now = options.now || new Date().toISOString();
+  const enforceCooldown = options.enforceCooldown !== false;
+  const prioritizeDeviceMode = options.prioritizeDeviceMode === true;
+  const triggeredDeviceNames = options.triggeredDeviceNames || new Set();
+  const targetDevice = getTargetDevice(rule);
+  const condition = evaluateRuleCondition(sensorData?.[rule?.sensor_type], rule, rule?.threshold);
+  const result = {
+    ruleId: rule?.id ?? null,
+    matched: condition.matched,
+    targetDevice: targetDevice || null,
+    action: rule?.action || null,
+    sensorType: rule?.sensor_type || null,
+    sensorValue: condition.sensorValue,
+    operator: condition.operator,
+    threshold: condition.threshold,
+    skippedReason: condition.skippedReason,
+    device: null,
+    topic: targetDevice ? DEVICE_CONTROL_TOPICS[targetDevice] || null : null,
+    command: null,
+  };
+
+  if (!condition.matched) {
+    return result;
+  }
+
+  if (!isRuleActive(rule)) {
+    result.skippedReason = "rule_inactive";
+    return result;
+  }
+
+  if (!validActions.has(rule.action)) {
+    result.skippedReason = "invalid_action";
+    return result;
+  }
+
+  if (!DEVICE_CONTROL_TOPICS[targetDevice]) {
+    result.skippedReason = "unsupported_device";
+    return result;
+  }
+
+  if (!prioritizeDeviceMode && enforceCooldown && isInCooldown(getLastTriggeredDate(rule), now)) {
+    result.skippedReason = "cooldown";
+    return result;
+  }
+
+  if (triggeredDeviceNames.has(targetDevice)) {
+    result.skippedReason = "device_already_triggered";
+    return result;
+  }
+
+  const device = await getDeviceByName(targetDevice);
+  result.device = device;
+  if (!device) {
+    result.skippedReason = "device_not_found";
+    return result;
+  }
+
+  if (device.mode !== "auto") {
+    result.skippedReason = "device_manual";
+    return result;
+  }
+
+  if (prioritizeDeviceMode && enforceCooldown && isInCooldown(getLastTriggeredDate(rule), now)) {
+    result.skippedReason = "cooldown";
+    return result;
+  }
+
+  result.skippedReason = null;
+  result.command = buildAutomationCommand({
+    rule,
+    targetDevice,
+    sensorValue: condition.sensorValue,
+    threshold: condition.threshold,
+    device,
   });
-}
 
-function shouldSkipDeviceCooldown(rule, now, triggeredDeviceNames) {
-  const targetDevice = getTargetDevice(rule);
-  if (triggeredDeviceNames.has(targetDevice)) return true;
-
-  return isInCooldown(getLastTriggeredDate(rule), now);
+  return result;
 }
 
 export async function runAutomationRulesForSensorData(sensorData, now = new Date().toISOString()) {
@@ -90,51 +198,60 @@ export async function runAutomationRulesForSensorData(sensorData, now = new Date
   const triggeredDeviceNames = new Set();
 
   for (const rule of rules) {
-    const targetDevice = getTargetDevice(rule);
-
-    if (!isRuleActive(rule)) {
-      continue;
-    }
-    if (!validActions.has(rule.action)) {
-      continue;
-    }
-    if (!DEVICE_CONTROL_TOPICS[targetDevice]) {
-      continue;
-    }
-    if (isInCooldown(getLastTriggeredDate(rule), now)) {
-      continue;
-    }
-    if (shouldSkipDeviceCooldown(rule, now, triggeredDeviceNames)) {
-      continue;
-    }
-
-    const sensorValue = sensorData[rule.sensor_type];
-    if (!matchesCondition(sensorValue, rule, rule.threshold)) {
-      continue;
-    }
-
-    await updateDeviceStateForAutomation(rule);
-    await updateAutomationRule(rule.id, { last_triggered_at: now });
-    triggeredDeviceNames.add(targetDevice);
-
-    commands.push({
-      topic: DEVICE_CONTROL_TOPICS[targetDevice],
-      payload: {
-        device_id: targetDevice,
-        action: rule.action,
-        source: "automation",
-        rule_id: rule.id,
-        sensor_type: rule.sensor_type,
-        value: sensorValue,
-        threshold: Number(rule.threshold),
-      },
+    const evaluation = await evaluateAutomationRuleForSensorData(rule, sensorData, {
+      now,
+      triggeredDeviceNames,
     });
+
+    if (evaluation.skippedReason === "device_not_found") {
+      console.warn(
+        `[Automation] Skipped rule "${rule.name}" (${rule.id}): device "${evaluation.targetDevice}" not found.`,
+      );
+      continue;
+    }
+
+    if (evaluation.skippedReason === "device_manual") {
+      console.info(
+        `[Automation] Skipped rule "${rule.name}" (${rule.id}) for device "${evaluation.targetDevice}": device is in manual mode.`,
+      );
+      continue;
+    }
+
+    if (!evaluation.command) {
+      continue;
+    }
+
+    await updateAutomationRule(rule.id, { last_triggered_at: now });
+    triggeredDeviceNames.add(evaluation.targetDevice);
+    commands.push(evaluation.command);
   }
 
   return commands;
 }
 
 export async function publishAutomationCommand(command) {
-  await publishMqtt(command.topic, command.payload, { qos: 1 });
-  console.log(`[Automation] Published ${command.payload.action} to ${command.topic}`);
+  const logData = {
+    device_id: command.device?.id ?? null,
+    device_name: command.payload.device,
+    command: command.payload.action,
+    source: "automation",
+    mqtt_published: false,
+    device_confirmed: false,
+  };
+
+  try {
+    await publishMqtt(command.topic, command.payload, { qos: 1 });
+    await createDeviceCommandLog({
+      ...logData,
+      mqtt_published: true,
+    });
+    console.log(
+      `[Automation] Command sent ${command.payload.action} to ${command.topic}; waiting for device status confirmation.`,
+    );
+  } catch (error) {
+    await createDeviceCommandLog(logData).catch((logError) => {
+      console.error("[Automation] Failed to record MQTT publish failure:", logError.message);
+    });
+    throw error;
+  }
 }
