@@ -1,6 +1,7 @@
 # Environment
 .env
 .env.*
+!.env.example
 
 # Logs
 /logs
@@ -32,3 +33,5 @@ dist-ssr
 .vite
 .vercel
 server/data/db.json
+
+.env*.local
