@@ -8,6 +8,7 @@
     },
     "scripts": {
         "dev": "vite",
+        "start": "node server/index.js",
         "server": "node server/index.js",
         "mqtt:pub": "node server/scripts/publishMqttMessage.js",
         "db:test": "node server/scripts/testPostgresConnection.js",
