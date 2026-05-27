@@ -35,3 +35,4 @@ dist-ssr
 server/data/db.json
 
 .env*.local
+.env*

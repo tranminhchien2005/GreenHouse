@@ -1,6 +1,7 @@
 import { requireUser } from "./auth.js";
 import { pool } from "./database.js";
 import { readBody, sendJson } from "./httpUtils.js";
+import { broadcastRealtime } from "./realtime.js";
 import { publishSim800lSmsRequest } from "./sim800l.js";
 import {
   ALERT_THRESHOLD_OPERATORS,
@@ -49,12 +50,23 @@ import {
   listDeviceCommandLogs,
 } from "./repositories/deviceCommandLogRepository.js";
 import {
+  getPlantProfileById,
+  listPlantProfiles,
+} from "./repositories/plantProfileRepository.js";
+import {
   deleteSensorReading,
   getLatestSensorReading,
   getSensorReadingById,
   getDailyStats,
   listSensorReadings,
 } from "./repositories/sensorRepository.js";
+import {
+  createUserPlant,
+  deactivateUserPlant,
+  getUserPlantById,
+  listUserPlants,
+  updateUserPlant,
+} from "./repositories/userPlantRepository.js";
 
 const allowedEntities = new Set([
   "SensorData",
@@ -63,6 +75,8 @@ const allowedEntities = new Set([
   "AutomationRule",
   "Alert",
   "AlertThreshold",
+  "PlantProfile",
+  "UserPlant",
 ]);
 
 function sortItems(items, sortBy) {
@@ -436,6 +450,96 @@ function toLegacyDeviceCommandLog(log) {
   };
 }
 
+function toLegacyPlantProfile(profile) {
+  if (!profile) return null;
+
+  return {
+    id: profile.id,
+    code: profile.code,
+    name: profile.name,
+    min_temperature: profile.min_temperature,
+    max_temperature: profile.max_temperature,
+    min_humidity: profile.min_humidity,
+    max_humidity: profile.max_humidity,
+    min_soil_moisture: profile.min_soil_moisture,
+    max_soil_moisture: profile.max_soil_moisture,
+    min_light: profile.min_light,
+    max_light: profile.max_light,
+    watering_note: profile.watering_note,
+    care_note: profile.care_note,
+    aliases: profile.aliases,
+    active: profile.active,
+    is_active: profile.active,
+    created_at: profile.created_at,
+    updated_at: profile.updated_at,
+  };
+}
+
+function toLegacyUserPlant(plant) {
+  if (!plant) return null;
+
+  return {
+    id: plant.id,
+    plant_profile_id: plant.plant_profile_id,
+    plantProfileId: plant.plant_profile_id,
+    name: plant.name,
+    location: plant.location,
+    planted_at: plant.planted_at,
+    plantedAt: plant.planted_at,
+    notes: plant.notes,
+    active: plant.active,
+    is_active: plant.active,
+    plant_profile: toLegacyPlantProfile(plant.plant_profile),
+    plantProfile: toLegacyPlantProfile(plant.plant_profile),
+    created_at: plant.created_at,
+    updated_at: plant.updated_at,
+  };
+}
+
+function getPlantProfileSortOptions(url) {
+  const rawSortBy = url.searchParams.get("sortBy");
+  const sortOrderParam = url.searchParams.get("sortOrder");
+  const isDesc = rawSortBy?.startsWith("-");
+  const sortByValue = isDesc ? rawSortBy.slice(1) : rawSortBy;
+  const sortFieldAliases = {
+    created_date: "created_at",
+    updated_date: "updated_at",
+    is_active: "active",
+    isActive: "active",
+  };
+
+  return {
+    limit: url.searchParams.get("limit"),
+    page: url.searchParams.get("page"),
+    active: url.searchParams.get("active") ?? url.searchParams.get("is_active") ?? url.searchParams.get("isActive"),
+    sortBy: sortFieldAliases[sortByValue] || sortByValue || "name",
+    sortOrder: isDesc ? "desc" : sortOrderParam,
+  };
+}
+
+function getUserPlantSortOptions(url) {
+  const rawSortBy = url.searchParams.get("sortBy");
+  const sortOrderParam = url.searchParams.get("sortOrder");
+  const isDesc = rawSortBy?.startsWith("-");
+  const sortByValue = isDesc ? rawSortBy.slice(1) : rawSortBy;
+  const sortFieldAliases = {
+    plantedAt: "planted_at",
+    planted_date: "planted_at",
+    created_date: "created_at",
+    updated_date: "updated_at",
+    is_active: "active",
+    isActive: "active",
+  };
+
+  return {
+    limit: url.searchParams.get("limit"),
+    page: url.searchParams.get("page"),
+    active: url.searchParams.get("active") ?? url.searchParams.get("is_active") ?? url.searchParams.get("isActive"),
+    sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
+    sortOrder: isDesc ? "desc" : sortOrderParam,
+  };
+}
+
 function toLegacyDailySensorStats(row) {
   if (!row) return null;
 
@@ -523,6 +627,10 @@ async function handleSensorData(req, res, url, id, action) {
 async function handleAlert(req, res, url, id, action) {
   if (id === "read-all" && req.method === "POST") {
     const updatedAlerts = await markAllAlertsAsRead();
+    broadcastRealtime("alert:update", {
+      updated: updatedAlerts.length,
+      items: updatedAlerts.map(toLegacyAlert),
+    });
     sendJson(res, 200, {
       success: true,
       updated: updatedAlerts.length,
@@ -538,6 +646,7 @@ async function handleAlert(req, res, url, id, action) {
       return true;
     }
 
+    broadcastRealtime("alert:update", toLegacyAlert(updatedAlert));
     sendJson(res, 200, toLegacyAlert(updatedAlert));
     return true;
   }
@@ -568,6 +677,7 @@ async function handleAlert(req, res, url, id, action) {
     }
 
     const alert = toLegacyAlert(await createAlert(toAlertRepositoryData(data)));
+    broadcastRealtime("alert:new", alert);
     publishSim800lSmsRequest(alert).catch((error) => {
       console.error("[SIM800L SMS] Failed to publish alert:", error.message);
     });
@@ -584,7 +694,9 @@ async function handleAlert(req, res, url, id, action) {
       return true;
     }
 
-    sendJson(res, 200, toLegacyAlert(alert));
+    const legacyAlert = toLegacyAlert(alert);
+    broadcastRealtime("alert:update", legacyAlert);
+    sendJson(res, 200, legacyAlert);
     return true;
   }
 
@@ -595,6 +707,7 @@ async function handleAlert(req, res, url, id, action) {
       return true;
     }
 
+    broadcastRealtime("alert:delete", toLegacyAlert(deleted));
     sendJson(res, 200, { success: true, item: toLegacyAlert(deleted) });
     return true;
   }
@@ -636,7 +749,11 @@ async function handleAutomationRuleTest(req, res, url, id) {
 
   if (confirm && evaluation.command) {
     try {
-      await updateAutomationRule(rule.id, { last_triggered_at: now });
+      const updatedRule = await updateAutomationRule(rule.id, { last_triggered_at: now });
+      broadcastRealtime("automation_rule:change", {
+        action: "update",
+        item: toLegacyAutomationRule(updatedRule),
+      });
       await publishAutomationCommand(evaluation.command);
       published = true;
     } catch (error) {
@@ -695,6 +812,10 @@ async function handleAutomationRule(req, res, url, id, action) {
 
     try {
       const rule = await createAutomationRule(toAutomationRepositoryData(data));
+      broadcastRealtime("automation_rule:change", {
+        action: "create",
+        item: toLegacyAutomationRule(rule),
+      });
       sendJson(res, 201, toLegacyAutomationRule(rule));
     } catch (error) {
       sendJson(res, 400, { message: error.message || "Invalid automation rule" });
@@ -713,6 +834,10 @@ async function handleAutomationRule(req, res, url, id, action) {
         return true;
       }
 
+      broadcastRealtime("automation_rule:change", {
+        action: "update",
+        item: toLegacyAutomationRule(rule),
+      });
       sendJson(res, 200, toLegacyAutomationRule(rule));
     } catch (error) {
       sendJson(res, 400, { message: error.message || "Invalid automation rule" });
@@ -728,6 +853,10 @@ async function handleAutomationRule(req, res, url, id, action) {
       return true;
     }
 
+    broadcastRealtime("automation_rule:change", {
+      action: "delete",
+      item: toLegacyAutomationRule(deleted),
+    });
     sendJson(res, 200, { success: true, item: toLegacyAutomationRule(deleted) });
     return true;
   }
@@ -788,6 +917,7 @@ async function handleDeviceState(req, res, url, id, action) {
   if (req.method === "POST" && !id) {
     const data = await readBody(req);
     const device = await upsertDeviceByName(toDeviceRepositoryData(data));
+    broadcastRealtime("device:update", toLegacyDeviceState(device));
     sendJson(res, 201, toLegacyDeviceState(device));
     return true;
   }
@@ -803,6 +933,7 @@ async function handleDeviceState(req, res, url, id, action) {
       return true;
     }
 
+    broadcastRealtime("device:update", toLegacyDeviceState(device));
     sendJson(res, 200, toLegacyDeviceState(device));
     return true;
   }
@@ -812,6 +943,7 @@ async function handleDeviceState(req, res, url, id, action) {
       item ? deleteDevice(item.id) : null
     ));
 
+    broadcastRealtime("device:delete", toLegacyDeviceState(device));
     sendJson(res, 200, { success: true, item: toLegacyDeviceState(device) });
     return true;
   }
@@ -830,6 +962,129 @@ async function handleDeviceCommandLog(req, res, url, id) {
     message: id ? "Item not found" : "Method not allowed",
   });
   return true;
+}
+
+async function handlePlantProfile(req, res, url, id) {
+  if (req.method === "GET" && !id) {
+    const profiles = await listPlantProfiles(getPlantProfileSortOptions(url));
+    sendJson(res, 200, profiles.map(toLegacyPlantProfile));
+    return true;
+  }
+
+  if (req.method === "GET" && id) {
+    const profile = await getPlantProfileById(id);
+    if (!profile) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    sendJson(res, 200, toLegacyPlantProfile(profile));
+    return true;
+  }
+
+  sendJson(res, 405, { message: "Method not allowed" });
+  return true;
+}
+
+function getUserPlantErrorMessage(error) {
+  if (error?.code === "23505") return "Tên cây/khu vực đã tồn tại";
+  if (error?.code === "23503") return "Hồ sơ cây không tồn tại";
+  return error?.message || "Dữ liệu cây trồng không hợp lệ";
+}
+
+async function handleUserPlant(req, res, url, id, action) {
+  if (id && action === "deactivate" && ["POST", "PATCH"].includes(req.method)) {
+    const plant = await deactivateUserPlant(id);
+    if (!plant) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    broadcastRealtime("plant:change", {
+      action: "deactivate",
+      item: toLegacyUserPlant(plant),
+    });
+    sendJson(res, 200, { success: true, item: toLegacyUserPlant(plant) });
+    return true;
+  }
+
+  if (req.method === "GET" && !id) {
+    const plants = await listUserPlants(getUserPlantSortOptions(url));
+    sendJson(res, 200, plants.map(toLegacyUserPlant));
+    return true;
+  }
+
+  if (req.method === "GET" && id) {
+    const plant = await getUserPlantById(id, { includeInactive: true });
+    if (!plant) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    sendJson(res, 200, toLegacyUserPlant(plant));
+    return true;
+  }
+
+  if (req.method === "POST" && !id) {
+    const data = await readBody(req);
+
+    try {
+      const plant = await createUserPlant(data);
+      broadcastRealtime("plant:change", {
+        action: "create",
+        item: toLegacyUserPlant(plant),
+      });
+      sendJson(res, 201, toLegacyUserPlant(plant));
+    } catch (error) {
+      sendJson(res, 400, { message: getUserPlantErrorMessage(error) });
+    }
+
+    return true;
+  }
+
+  if (req.method === "PATCH" && id) {
+    const patch = await readBody(req);
+
+    try {
+      const plant = await updateUserPlant(id, patch);
+      if (!plant) {
+        sendJson(res, 404, { message: "Item not found" });
+        return true;
+      }
+
+      broadcastRealtime("plant:change", {
+        action: "update",
+        item: toLegacyUserPlant(plant),
+      });
+      sendJson(res, 200, toLegacyUserPlant(plant));
+    } catch (error) {
+      sendJson(res, 400, { message: getUserPlantErrorMessage(error) });
+    }
+
+    return true;
+  }
+
+  if (req.method === "DELETE" && id) {
+    const plant = await deactivateUserPlant(id);
+    if (!plant) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    broadcastRealtime("plant:change", {
+      action: "deactivate",
+      item: toLegacyUserPlant(plant),
+    });
+    sendJson(res, 200, { success: true, item: toLegacyUserPlant(plant) });
+    return true;
+  }
+
+  if (req.method === "DELETE" && !id) {
+    sendJson(res, 400, { message: "UserPlant id is required" });
+    return true;
+  }
+
+  return false;
 }
 
 function toLegacyThreshold(row) {
@@ -925,6 +1180,7 @@ async function handleAlertThreshold(req, res, id) {
     try {
       createdAlerts = await evaluateAlertsForLatestReading();
       for (const alert of createdAlerts) {
+        broadcastRealtime("alert:new", alert);
         publishSim800lSmsRequest(alert).catch((error) => {
           console.error("[SIM800L SMS] Failed to publish alert:", error.message);
         });
@@ -933,6 +1189,10 @@ async function handleAlertThreshold(req, res, id) {
       console.error("[AlertThreshold] Failed to evaluate latest reading:", error.message);
     }
 
+    broadcastRealtime("alert_threshold:update", {
+      item: toLegacyThreshold(result.rows[0]),
+      alerts_created: createdAlerts.length,
+    });
     sendJson(res, 200, {
       ...toLegacyThreshold(result.rows[0]),
       alerts_created: createdAlerts.length,
@@ -968,6 +1228,14 @@ export async function handleEntity(req, res, url, parts) {
 
   if (entityName === "DeviceCommandLog") {
     return handleDeviceCommandLog(req, res, url, id);
+  }
+
+  if (entityName === "PlantProfile") {
+    return handlePlantProfile(req, res, url, id);
+  }
+
+  if (entityName === "UserPlant") {
+    return handleUserPlant(req, res, url, id, action);
   }
 
   if (entityName === "SensorData") {

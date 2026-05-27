@@ -1,5 +1,6 @@
 import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
 import { publishMqtt } from "./mqtt.js";
+import { broadcastRealtime } from "./realtime.js";
 import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
 import { upsertDeviceByName } from "./repositories/deviceRepository.js";
 
@@ -95,8 +96,9 @@ export async function executeDeviceCommand({ deviceId, isOn, requestedBy = null,
       mqtt_published: true,
       device_confirmed: false,
     });
+    broadcastRealtime("device_command:new", commandLog);
   } catch (error) {
-    await createDeviceCommandLog({
+    const failedCommandLog = await createDeviceCommandLog({
       device_id: device.id,
       device_name: device.name,
       command: command.action,
@@ -106,7 +108,9 @@ export async function executeDeviceCommand({ deviceId, isOn, requestedBy = null,
       device_confirmed: false,
     }).catch((logError) => {
       console.error("[DeviceControl] Failed to record MQTT publish failure:", logError.message);
+      return null;
     });
+    if (failedCommandLog) broadcastRealtime("device_command:new", failedCommandLog);
     throw error;
   }
 

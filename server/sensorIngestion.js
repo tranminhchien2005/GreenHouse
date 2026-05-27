@@ -1,6 +1,7 @@
 import { createAlertsForSensorData } from "./alerts.js";
 import { publishAutomationCommand, runAutomationRulesForSensorData } from "./automation.js";
 import { publishSim800lSmsRequest } from "./sim800l.js";
+import { broadcastRealtime } from "./realtime.js";
 import { createSensorReading } from "./repositories/sensorRepository.js";
 
 function toNumberOrNull(value) {
@@ -84,6 +85,11 @@ export async function ingestSensorReading(data) {
   const reading = await createSensorReading(toSensorRepositoryData(data));
   const nextItem = toLegacySensorData(reading);
   const sideEffects = await runSensorSideEffects(nextItem);
+
+  broadcastRealtime("sensor:update", nextItem);
+  for (const alert of sideEffects.createdAlerts) {
+    broadcastRealtime("alert:new", alert);
+  }
 
   publishSensorSideEffects(sideEffects);
 

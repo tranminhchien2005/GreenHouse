@@ -1,5 +1,6 @@
 import { publishMqtt } from "./mqtt.js";
 import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
+import { broadcastRealtime } from "./realtime.js";
 import { getActiveAutomationRules, updateAutomationRule } from "./repositories/automationRepository.js";
 import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
 import { getDeviceByName } from "./repositories/deviceRepository.js";
@@ -241,17 +242,20 @@ export async function publishAutomationCommand(command) {
 
   try {
     await publishMqtt(command.topic, command.payload, { qos: 1 });
-    await createDeviceCommandLog({
+    const commandLog = await createDeviceCommandLog({
       ...logData,
       mqtt_published: true,
     });
+    broadcastRealtime("device_command:new", commandLog);
     console.log(
       `[Automation] Command sent ${command.payload.action} to ${command.topic}; waiting for device status confirmation.`,
     );
   } catch (error) {
-    await createDeviceCommandLog(logData).catch((logError) => {
+    const failedCommandLog = await createDeviceCommandLog(logData).catch((logError) => {
       console.error("[Automation] Failed to record MQTT publish failure:", logError.message);
+      return null;
     });
+    if (failedCommandLog) broadcastRealtime("device_command:new", failedCommandLog);
     throw error;
   }
 }

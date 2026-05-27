@@ -98,6 +98,8 @@ export const appClient = {
     AutomationRule: createEntityStore("AutomationRule"),
     Alert: createEntityStore("Alert"),
     AlertThreshold: createEntityStore("AlertThreshold"),
+    PlantProfile: createEntityStore("PlantProfile"),
+    UserPlant: createEntityStore("UserPlant"),
   },
   devices: {
     async command(deviceId, data) {

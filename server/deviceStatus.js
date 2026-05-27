@@ -1,5 +1,6 @@
 import { subscribeMqtt } from "./mqtt.js";
 import { DEVICE_STATUS_TOPIC } from "./mqttTopics.js";
+import { broadcastRealtime } from "./realtime.js";
 import { markLatestDeviceCommandConfirmed } from "./repositories/deviceCommandLogRepository.js";
 import { getDeviceByName, updateDeviceByName } from "./repositories/deviceRepository.js";
 
@@ -93,12 +94,15 @@ export async function updateDeviceStateFromStatus(payload) {
   });
 
   if (confirmedCommand) {
+    broadcastRealtime("device_command:update", confirmedCommand);
     console.log(
       `[DeviceStatus] Confirmed command ${confirmedCommand.command} for ${savedDevice.name} from device status.`,
     );
   }
 
-  return toLoggableDevice(savedDevice);
+  const loggableDevice = toLoggableDevice(savedDevice);
+  broadcastRealtime("device:update", loggableDevice);
+  return loggableDevice;
 }
 
 export function startDeviceStatusMqttListener() {

@@ -47,6 +47,17 @@ function verifyToken(token) {
   }
 }
 
+export async function getUserFromToken(token) {
+  if (!token) return null;
+
+  const payload = verifyToken(token);
+  const userId = payload?.sub || payload?.userId;
+  if (!userId) return null;
+
+  const user = await findUserById(userId);
+  return toPublicUser(user);
+}
+
 async function isPasswordValid(password, passwordHash) {
   if (!password || !passwordHash) return false;
 
@@ -58,23 +69,7 @@ async function isPasswordValid(password, passwordHash) {
 }
 
 export async function requireUser(req, res) {
-  const token = getAuthToken(req);
-
-  if (!token) {
-    sendJson(res, 401, { message: "Authentication required" });
-    return null;
-  }
-
-  const payload = verifyToken(token);
-  const userId = payload?.sub || payload?.userId;
-
-  if (!userId) {
-    sendJson(res, 401, { message: "Authentication required" });
-    return null;
-  }
-
-  const user = await findUserById(userId);
-
+  const user = await getUserFromToken(getAuthToken(req));
   if (!user) {
     sendJson(res, 401, { message: "Authentication required" });
     return null;

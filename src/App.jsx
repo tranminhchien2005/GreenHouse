@@ -4,6 +4,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import RealtimeBridge from '@/lib/RealtimeBridge';
 import AppLayout from '@/components/layout/AppLayout';
 import Dashboard from '@/pages/Dashboard';
 import Controls from '@/pages/Controls';
@@ -43,17 +44,20 @@ const AuthenticatedApp = () => {
 
   // Render the main app
   return (
-    <Routes>
-      <Route element={<AppLayout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/controls" element={<Controls />} />
-        <Route path="/automation" element={<Automation />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/history" element={<History />} />
-        <Route path="/settings" element={<Settings />} />
-      </Route>
-      <Route path="*" element={<PageNotFound />} />
-    </Routes>
+    <>
+      <RealtimeBridge />
+      <Routes>
+        <Route element={<AppLayout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/controls" element={<Controls />} />
+          <Route path="/automation" element={<Automation />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/history" element={<History />} />
+          <Route path="/settings" element={<Settings />} />
+        </Route>
+        <Route path="*" element={<PageNotFound />} />
+      </Routes>
+    </>
   );
 };
 

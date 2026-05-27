@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Bot, Check, Loader2, MessageCircle, Send, Sprout, X } from 'lucide-react';
 import { appClient } from '@/api/appClient';
 import { Button } from '@/components/ui/button';
@@ -38,13 +38,18 @@ export default function ChatbotWidget() {
   const [confirmingActionKey, setConfirmingActionKey] = useState('');
   const [executingActionKey, setExecutingActionKey] = useState('');
   const [completedActionKeys, setCompletedActionKeys] = useState({});
-  const [plants, setPlants] = useState([]);
   const [selectedPlantId, setSelectedPlantId] = useState(AUTO_PLANT_VALUE);
-  const [isLoadingPlants, setIsLoadingPlants] = useState(false);
-  const [hasLoadedPlants, setHasLoadedPlants] = useState(false);
-  const [plantLoadError, setPlantLoadError] = useState('');
   const scrollRef = useRef(null);
   const textareaRef = useRef(null);
+  const plantsQuery = useQuery({
+    queryKey: ['chatbotPlants'],
+    queryFn: appClient.chatbot.listPlants,
+    enabled: isOpen,
+    staleTime: 10_000,
+  });
+  const plants = Array.isArray(plantsQuery.data) ? plantsQuery.data : [];
+  const isLoadingPlants = plantsQuery.isLoading || (plantsQuery.isFetching && plants.length === 0);
+  const plantLoadError = plantsQuery.error?.message || '';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -54,34 +59,6 @@ export default function ChatbotWidget() {
     });
     textareaRef.current?.focus();
   }, [isOpen, messages]);
-
-  useEffect(() => {
-    if (!isOpen || hasLoadedPlants || isLoadingPlants) return;
-
-    let cancelled = false;
-    setIsLoadingPlants(true);
-    setPlantLoadError('');
-
-    appClient.chatbot.listPlants()
-      .then((result) => {
-        if (cancelled) return;
-        setPlants(Array.isArray(result) ? result : []);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setPlantLoadError(error.message || 'Không tải được danh sách cây');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setHasLoadedPlants(true);
-          setIsLoadingPlants(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hasLoadedPlants, isLoadingPlants, isOpen]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -212,18 +189,28 @@ export default function ChatbotWidget() {
               <Select
                 value={selectedPlantId}
                 onValueChange={setSelectedPlantId}
-                disabled={isSending || isLoadingPlants}
+                disabled={isSending}
               >
                 <SelectTrigger className="h-9 flex-1">
                   <SelectValue placeholder="Chọn cây/khu vực" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={AUTO_PLANT_VALUE}>Tự tìm cây trong câu hỏi</SelectItem>
+                  {isLoadingPlants && (
+                    <SelectItem value="loading-plants" disabled>
+                      Đang tải danh sách cây...
+                    </SelectItem>
+                  )}
                   {plants.map((plant) => (
                     <SelectItem key={plant.id} value={plant.id}>
                       {plant.location ? `${plant.location} - ${plant.plant_profile?.name || plant.name}` : plant.name}
                     </SelectItem>
                   ))}
+                  {!isLoadingPlants && plantLoadError && (
+                    <SelectItem value="plant-load-error" disabled>
+                      Không tải được danh sách cây
+                    </SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
