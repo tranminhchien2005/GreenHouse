@@ -4,7 +4,6 @@ import { listDevices, upsertDeviceByName } from "../repositories/deviceRepositor
 const sampleDevices = [
   { name: "pump", type: "pump", is_on: false, mode: "manual", online: false },
   { name: "fan", type: "fan", is_on: false, mode: "manual", online: false },
-  { name: "mist", type: "mist", is_on: false, mode: "manual", online: false },
   { name: "light", type: "light", is_on: false, mode: "manual", online: false },
 ];
 

@@ -28,7 +28,6 @@ struct Device {
 Device devices[] = {
   {"pump", "control/pump", 25, false},
   {"fan", "control/fan", 26, false},
-  {"mist", "control/mist", 27, false},
   {"light", "control/light", 14, false},
 };
 

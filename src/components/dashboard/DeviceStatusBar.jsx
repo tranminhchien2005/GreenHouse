@@ -1,13 +1,12 @@
 import React from 'react';
 import { Card } from '@/components/ui/card';
-import { Droplets, Fan, CloudRain, Lightbulb } from 'lucide-react';
+import { Droplets, Fan, Lightbulb } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DEVICE_IDS, DEVICE_LABELS } from '@/config/greenhouse';
 
 const deviceIcons = {
   pump: Droplets,
   fan: Fan,
-  mist: CloudRain,
   light: Lightbulb,
 };
 
@@ -34,7 +33,7 @@ export default function DeviceStatusBar({ devices }) {
       <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
         Trạng thái thiết bị
       </h3>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {DEVICE_IDS.map((id) => {
           const device = devices.find((d) => d.device_id === id);
           const isOn = device?.is_on || false;

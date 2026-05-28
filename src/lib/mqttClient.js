@@ -15,7 +15,6 @@ export const TOPICS = {
   SENSORS: topic('sensors'),
   CONTROL_PUMP: topic('control/pump'),
   CONTROL_FAN: topic('control/fan'),
-  CONTROL_MIST: topic('control/mist'),
   CONTROL_LIGHT: topic('control/light'),
 };
 

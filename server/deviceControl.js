@@ -7,14 +7,12 @@ import { upsertDeviceByName } from "./repositories/deviceRepository.js";
 export const DEVICE_LABELS = {
   pump: "Máy bơm",
   fan: "Quạt",
-  mist: "Phun sương",
   light: "Đèn",
 };
 
 export const DEVICE_ALIASES = {
   pump: ["pump", "bơm", "bom", "máy bơm", "may bom", "tưới", "tuoi"],
   fan: ["fan", "quạt", "quat", "thông gió", "thong gio"],
-  mist: ["mist", "phun sương", "phun suong", "sương", "suong"],
   light: ["light", "đèn", "den", "ánh sáng", "anh sang"],
 };
 

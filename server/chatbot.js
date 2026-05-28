@@ -34,7 +34,7 @@ Mục tiêu chính:
 
 Ngữ cảnh hệ thống:
 - Hệ thống có thể có dữ liệu cảm biến như nhiệt độ, độ ẩm đất, độ ẩm không khí, ánh sáng, thời gian đo.
-- Hệ thống có thể có thiết bị như máy bơm, đèn, quạt, phun sương.
+- Hệ thống có thể có thiết bị như máy bơm, đèn, quạt.
 - Hệ thống có thể có cảnh báo gần đây và luật tự động hóa.
 - Mỗi cây trồng có thể có ngưỡng phù hợp riêng về nhiệt độ, độ ẩm đất, độ ẩm không khí và ánh sáng.
 
@@ -296,13 +296,11 @@ function findSensorBasedDeviceActions(context) {
   const soilMin = getRangeValue(profile.soil_moisture_range, 0);
   const soilMax = getRangeValue(profile.soil_moisture_range, 1);
   const tempMax = getRangeValue(profile.temperature_range, 1);
-  const humidityMin = getRangeValue(profile.humidity_range, 0);
   const lightMin = getRangeValue(profile.light_range, 0);
   const lightMax = getRangeValue(profile.light_range, 1);
 
   const pump = getContextDevice(context, "pump");
   const fan = getContextDevice(context, "fan");
-  const mist = getContextDevice(context, "mist");
   const light = getContextDevice(context, "light");
 
   if (soilMin != null && sensor.soil_moisture != null && sensor.soil_moisture < soilMin && pump?.is_on !== true) {
@@ -326,14 +324,6 @@ function findSensorBasedDeviceActions(context) {
       deviceId: "fan",
       isOn: true,
       reason: `Nhiệt độ ${sensor.temperature}°C cao hơn ngưỡng ${tempMax}°C.`,
-    }));
-  }
-
-  if (humidityMin != null && sensor.humidity != null && sensor.humidity < humidityMin && mist?.is_on !== true) {
-    addDeviceAction(actions, createDeviceAction({
-      deviceId: "mist",
-      isOn: true,
-      reason: `Độ ẩm không khí ${sensor.humidity}% thấp hơn ngưỡng ${humidityMin}%.`,
     }));
   }
 

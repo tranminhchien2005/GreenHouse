@@ -9,7 +9,6 @@ INSERT INTO devices (name, type, is_on, mode, online, last_seen_at)
 VALUES
   ('pump', 'pump', false, 'manual', false, NULL),
   ('fan', 'fan', false, 'manual', false, NULL),
-  ('mist', 'mist', false, 'manual', false, NULL),
   ('light', 'light', false, 'manual', false, NULL)
 ON CONFLICT (name) DO NOTHING;
 

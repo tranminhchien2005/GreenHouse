@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Droplets, Fan, CloudRain, Lightbulb, Power } from 'lucide-react';
+import { Droplets, Fan, Lightbulb, Power } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { DEVICE_IDS } from '@/config/greenhouse';
@@ -13,7 +13,6 @@ import { useToast } from '@/components/ui/use-toast';
 const deviceConfig = {
   pump: { icon: Droplets, label: 'Máy bơm nước', desc: 'Tưới cây tự động', gradient: 'from-blue-500 to-cyan-400' },
   fan: { icon: Fan, label: 'Quạt thông gió', desc: 'Làm mát nhà kính', gradient: 'from-teal-500 to-emerald-400' },
-  mist: { icon: CloudRain, label: 'Phun sương', desc: 'Tăng độ ẩm không khí', gradient: 'from-violet-500 to-purple-400' },
   light: { icon: Lightbulb, label: 'Đèn chiếu sáng', desc: 'Bổ sung ánh sáng', gradient: 'from-amber-500 to-yellow-400' },
 };
 

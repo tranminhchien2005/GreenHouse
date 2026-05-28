@@ -43,17 +43,6 @@
       "updated_date": "2026-04-29T14:56:46.090Z"
     },
     {
-      "id": "mist",
-      "device_id": "mist",
-      "device_name": "Phun suong",
-      "is_on": false,
-      "mode": "manual",
-      "online": false,
-      "last_seen": null,
-      "created_date": "2026-04-29T14:56:46.090Z",
-      "updated_date": "2026-04-29T14:56:46.090Z"
-    },
-    {
       "id": "light",
       "device_id": "light",
       "device_name": "Den",

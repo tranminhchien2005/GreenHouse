@@ -6,11 +6,10 @@ export const SENSOR_LABELS = {
   gas: 'Khí gas',
 };
 
-export const DEVICE_IDS = ['pump', 'fan', 'mist', 'light'];
+export const DEVICE_IDS = ['pump', 'fan', 'light'];
 
 export const DEVICE_LABELS = {
   pump: 'Máy bơm',
   fan: 'Quạt',
-  mist: 'Phun sương',
   light: 'Đèn',
 };
