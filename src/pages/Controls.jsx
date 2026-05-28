@@ -3,7 +3,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Droplets, Fan, Lightbulb, Power } from 'lucide-react';
+import {
+  CheckCircle2,
+  Clock3,
+  Droplets,
+  Fan,
+  Lightbulb,
+  Loader2,
+  Power,
+  RadioTower,
+  Settings2,
+  TriangleAlert,
+  Wifi,
+  WifiOff,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
 import { DEVICE_IDS } from '@/config/greenhouse';
@@ -11,30 +24,140 @@ import { deviceService } from '@/services/deviceService';
 import { useToast } from '@/components/ui/use-toast';
 
 const deviceConfig = {
-  pump: { icon: Droplets, label: 'Máy bơm nước', desc: 'Tưới cây tự động', gradient: 'from-blue-500 to-cyan-400' },
-  fan: { icon: Fan, label: 'Quạt thông gió', desc: 'Làm mát nhà kính', gradient: 'from-teal-500 to-emerald-400' },
-  light: { icon: Lightbulb, label: 'Đèn chiếu sáng', desc: 'Bổ sung ánh sáng', gradient: 'from-amber-500 to-yellow-400' },
+  pump: {
+    icon: Droplets,
+    label: 'Máy bơm nước',
+    desc: 'Tưới cây tự động',
+    accent: 'bg-blue-500',
+    soft: 'bg-blue-50 text-blue-700 border-blue-100',
+    active: 'bg-blue-600 text-white',
+  },
+  fan: {
+    icon: Fan,
+    label: 'Quạt thông gió',
+    desc: 'Làm mát nhà kính',
+    accent: 'bg-teal-500',
+    soft: 'bg-teal-50 text-teal-700 border-teal-100',
+    active: 'bg-teal-600 text-white',
+  },
+  light: {
+    icon: Lightbulb,
+    label: 'Đèn chiếu sáng',
+    desc: 'Bổ sung ánh sáng',
+    accent: 'bg-amber-500',
+    soft: 'bg-amber-50 text-amber-700 border-amber-100',
+    active: 'bg-amber-500 text-white',
+  },
 };
 
 const commandStatusConfig = {
-  command_sent: { label: 'Đã gửi lệnh, chờ phản hồi', className: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
-  confirmed: { label: 'Thiết bị đã xác nhận', className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
-  failed: { label: 'Gửi lệnh thất bại', className: 'bg-red-100 text-red-700 hover:bg-red-100' },
-  timeout: { label: 'Quá thời gian phản hồi', className: 'bg-red-100 text-red-700 hover:bg-red-100' },
+  command_sent: {
+    icon: Loader2,
+    label: 'Chờ xác nhận',
+    className: 'border-amber-200 bg-amber-50 text-amber-700',
+    iconClassName: 'animate-spin',
+  },
+  confirmed: {
+    icon: CheckCircle2,
+    label: 'Đã xác nhận',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  failed: {
+    icon: TriangleAlert,
+    label: 'Gửi thất bại',
+    className: 'border-red-200 bg-red-50 text-red-700',
+  },
+  timeout: {
+    icon: Clock3,
+    label: 'Hết thời gian',
+    className: 'border-red-200 bg-red-50 text-red-700',
+  },
 };
 
-function DeviceCommandStatus({ log }) {
-  if (!log) return null;
+function getCommandStatus(log) {
+  return log?.command_status || log?.commandStatus || 'command_sent';
+}
 
-  const status = log.command_status || log.commandStatus || 'command_sent';
+function matchesDeviceId(item, deviceId) {
+  return item?.device_id === deviceId || item?.deviceName === deviceId || item?.name === deviceId;
+}
+
+function matchesCommandLog(log, deviceId) {
+  return (log?.device_name || log?.deviceName) === deviceId;
+}
+
+function DeviceCommandStatus({ log }) {
+  if (!log) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+        <Clock3 className="h-3.5 w-3.5" />
+        Chưa có lệnh gần đây
+      </span>
+    );
+  }
+
+  const status = getCommandStatus(log);
   const config = commandStatusConfig[status] || commandStatusConfig.command_sent;
+  const Icon = config.icon;
 
   return (
-    <div className="mt-4">
-      <Badge className={cn('text-[10px]', config.className)}>
-        {config.label}
+    <Badge variant="outline" className={cn('gap-1.5 border px-2 py-1 text-[11px]', config.className)}>
+      <Icon className={cn('h-3.5 w-3.5', config.iconClassName)} />
+      {config.label}
+    </Badge>
+  );
+}
+
+function SummaryCard({ icon: Icon, label, value, tone }) {
+  return (
+    <Card className="rounded-lg border-0 bg-card/90 p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium uppercase text-muted-foreground">{label}</p>
+          <p className="mt-1 text-2xl font-bold tracking-tight">{value}</p>
+        </div>
+        <div className={cn('flex h-10 w-10 items-center justify-center rounded-lg', tone)}>
+          <Icon className="h-5 w-5" />
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function ModeButton({ active, disabled, children, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        'h-8 min-w-20 rounded-md px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        active
+          ? 'bg-primary text-primary-foreground shadow-sm'
+          : 'text-muted-foreground hover:bg-background hover:text-foreground',
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function DeviceStateBadge({ device, isOn }) {
+  if (!device) {
+    return (
+      <Badge variant="secondary" className="border border-dashed border-border bg-muted text-muted-foreground">
+        Chưa có
       </Badge>
-    </div>
+    );
+  }
+
+  return (
+    <Badge className={cn('border px-2.5 py-1 text-xs', isOn
+      ? 'border-primary/20 bg-primary text-primary-foreground'
+      : 'border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100'
+    )}>
+      {isOn ? 'Đang bật' : 'Đang tắt'}
+    </Badge>
   );
 }
 
@@ -52,82 +175,90 @@ function DeviceControlCard({
   const Icon = config.icon;
   const isOn = device?.is_on || false;
   const isDevicePending = isTogglePending || isModePending;
+  const isOnline = device?.online === true;
 
   return (
     <motion.div
       key={deviceId}
-      initial={{ opacity: 0, y: 20 }}
+      className="h-full"
+      initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.1 }}
+      transition={{ delay: index * 0.06 }}
     >
       <Card className={cn(
-        "relative overflow-hidden border-0 shadow-sm transition-all duration-500",
-        isOn && "shadow-lg"
+        'relative h-full overflow-hidden rounded-lg border bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md',
+        isOn ? 'border-primary/25' : 'border-border',
       )}>
-        {/* Gradient top bar */}
         <div className={cn(
-          "h-1.5 bg-gradient-to-r transition-opacity duration-500",
-          config.gradient,
-          isOn ? "opacity-100" : "opacity-20"
+          'absolute inset-y-0 left-0 w-1 transition-opacity',
+          isOn ? config.accent : 'bg-border',
         )} />
 
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-6">
-            <div className="flex items-center gap-4">
+        <div className="flex h-full flex-col p-5 pl-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
               <div className={cn(
-                "w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-500",
-                isOn
-                  ? `bg-gradient-to-br ${config.gradient} text-white shadow-lg`
-                  : "bg-muted text-muted-foreground"
+                'flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                isOn ? config.active : config.soft,
               )}>
-                <Icon className="w-6 h-6" />
+                <Icon className="h-5 w-5" />
               </div>
-              <div>
-                <h3 className="font-semibold text-lg">{config.label}</h3>
-                <p className="text-sm text-muted-foreground">{config.desc}</p>
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-semibold">{config.label}</h3>
+                <p className="truncate text-sm text-muted-foreground">{config.desc}</p>
               </div>
             </div>
-            <Badge variant={isOn ? "default" : "secondary"} className={cn(
-              "text-xs",
-              isOn && "bg-primary"
-            )}>
-              {isOn ? 'BẬT' : 'TẮT'}
-            </Badge>
+            <DeviceStateBadge device={device} isOn={isOn} />
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Power className="w-4 h-4 text-muted-foreground" />
+          <div className="mt-5 space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-md bg-muted/50 px-3 py-2.5">
+              <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
+                {isOnline ? (
+                  <Wifi className="h-4 w-4 text-primary" />
+                ) : (
+                  <WifiOff className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="truncate">{isOnline ? 'Đã kết nối' : 'Chưa kết nối'}</span>
+              </div>
+              <DeviceCommandStatus log={latestCommandLog} />
+            </div>
+
+            <div className="flex items-center justify-between gap-4 border-t pt-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Power className="h-4 w-4 text-muted-foreground" />
+                Nguồn
+              </div>
               <Switch
                 checked={isOn}
                 onCheckedChange={(checked) => onToggle(device, deviceId, checked)}
                 disabled={!device || isDevicePending}
               />
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onModeChange(device, 'manual')}
-                disabled={!device || isDevicePending || device?.mode === 'manual'}
-                className={cn(
-                  "px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                  device?.mode === 'manual' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
-                )}
-              >
-                Thủ công
-              </button>
-              <button
-                onClick={() => onModeChange(device, 'auto')}
-                disabled={!device || isDevicePending || device?.mode === 'auto'}
-                className={cn(
-                  "px-3 py-1 rounded-lg text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                  device?.mode === 'auto' ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-accent"
-                )}
-              >
-                Tự động
-              </button>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Settings2 className="h-4 w-4 text-muted-foreground" />
+                Chế độ
+              </div>
+              <div className="inline-grid grid-cols-2 rounded-lg bg-muted p-1">
+                <ModeButton
+                  active={device?.mode === 'manual'}
+                  disabled={!device || isDevicePending || device?.mode === 'manual'}
+                  onClick={() => onModeChange(device, 'manual')}
+                >
+                  Thủ công
+                </ModeButton>
+                <ModeButton
+                  active={device?.mode === 'auto'}
+                  disabled={!device || isDevicePending || device?.mode === 'auto'}
+                  onClick={() => onModeChange(device, 'auto')}
+                >
+                  Tự động
+                </ModeButton>
+              </div>
             </div>
           </div>
-          <DeviceCommandStatus log={latestCommandLog} />
         </div>
       </Card>
     </motion.div>
@@ -206,22 +337,53 @@ export default function Controls() {
     modeMutation.mutate({ id: device.id, device_id: deviceId, mode });
   };
 
+  const configuredDevices = DEVICE_IDS.map((deviceId) => devices.find(d => matchesDeviceId(d, deviceId)));
+  const activeCount = configuredDevices.filter((device) => device?.is_on).length;
+  const autoCount = configuredDevices.filter((device) => device?.mode === 'auto').length;
+  const pendingCount = DEVICE_IDS
+    .map((deviceId) => commandLogs.find((log) => matchesCommandLog(log, deviceId)))
+    .filter(Boolean)
+    .filter((log) => getCommandStatus(log) === 'command_sent')
+    .length;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Điều khiển thiết bị</h1>
-        <p className="text-muted-foreground text-sm mt-1">Bật/tắt và quản lý chế độ hoạt động</p>
-        <p className="text-xs text-muted-foreground mt-2 max-w-3xl">
-          Thủ công: người dùng điều khiển trực tiếp, automation không tự ghi đè. Tự động: automation được phép điều khiển theo luật.
-        </p>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Điều khiển thiết bị</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Bật/tắt relay và chuyển chế độ vận hành</p>
+        </div>
+        <Badge variant="outline" className="w-fit gap-1.5 border-primary/20 bg-primary/5 px-3 py-1 text-primary">
+          <RadioTower className="h-3.5 w-3.5" />
+          {DEVICE_IDS.length} thiết bị
+        </Badge>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <SummaryCard
+          icon={Power}
+          label="Đang bật"
+          value={`${activeCount}/${DEVICE_IDS.length}`}
+          tone="bg-primary/10 text-primary"
+        />
+        <SummaryCard
+          icon={Settings2}
+          label="Tự động"
+          value={autoCount}
+          tone="bg-blue-50 text-blue-700"
+        />
+        <SummaryCard
+          icon={Clock3}
+          label="Đang chờ"
+          value={pendingCount}
+          tone="bg-amber-50 text-amber-700"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {DEVICE_IDS.map((deviceId, i) => {
-          const device = devices.find(d => d.device_id === deviceId);
-          const latestCommandLog = commandLogs.find((log) => (
-            (log.device_name || log.deviceName) === deviceId
-          ));
+          const device = devices.find(d => matchesDeviceId(d, deviceId));
+          const latestCommandLog = commandLogs.find((log) => matchesCommandLog(log, deviceId));
           const isTogglePending = toggleMutation.isPending && toggleMutation.variables?.device_id === deviceId;
           const isModePending = modeMutation.isPending && modeMutation.variables?.device_id === deviceId;
 
