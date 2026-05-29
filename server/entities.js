@@ -974,7 +974,7 @@ async function handleDeviceState(req, res, url, id, action) {
       });
     } catch (error) {
       sendJson(res, error.status || 500, {
-        message: error.status ? error.message : "Không thể gửi cấu hình Gateway lúc này",
+        message: error.status ? error.message : "Không thể gửi cấu hình tiết kiệm pin lúc này",
       });
     }
 
@@ -1456,6 +1456,11 @@ export async function handleEntity(req, res, url, parts) {
 
   const user = await requireUser(req, res);
   if (!user) return true;
+
+  if (user.role === "viewer" && req.method !== "GET") {
+    sendJson(res, 403, { message: "Tài khoản viewer chỉ được xem dữ liệu" });
+    return true;
+  }
 
   if (entityName === "DeviceState") {
     return handleDeviceState(req, res, url, id, action);

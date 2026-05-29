@@ -26,6 +26,7 @@ import { motion } from 'framer-motion';
 import { DEVICE_IDS } from '@/config/greenhouse';
 import { deviceService } from '@/services/deviceService';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
 
 const deviceConfig = {
   pump: {
@@ -172,13 +173,14 @@ function DeviceControlCard({
   index,
   isTogglePending,
   isModePending,
+  canControl,
   onToggle,
   onModeChange,
 }) {
   const config = deviceConfig[deviceId];
   const Icon = config.icon;
   const isOn = device?.is_on || false;
-  const isDevicePending = isTogglePending || isModePending;
+  const isDevicePending = isTogglePending || isModePending || !canControl;
   const isOnline = device?.online === true;
 
   return (
@@ -272,6 +274,7 @@ function DeviceControlCard({
 function GatewayFrequencyCard({
   value,
   isPending,
+  canControl,
   onChange,
   onSubmit,
 }) {
@@ -281,7 +284,7 @@ function GatewayFrequencyCard({
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <RadioTower className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-base font-semibold">Gateway</h2>
+            <h2 className="text-base font-semibold">Tiết kiệm pin</h2>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="gateway-update-frequency">Tần suất cập nhật</Label>
@@ -294,7 +297,7 @@ function GatewayFrequencyCard({
                 inputMode="numeric"
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
-                disabled={isPending}
+                disabled={isPending || !canControl}
                 className="pr-14"
               />
               <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-muted-foreground">
@@ -304,13 +307,13 @@ function GatewayFrequencyCard({
           </div>
         </div>
 
-        <Button type="submit" disabled={isPending} className="w-full gap-2 sm:w-fit">
+        <Button type="submit" disabled={isPending || !canControl} className="w-full gap-2 sm:w-fit">
           {isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <SendHorizontal className="h-4 w-4" />
           )}
-          Gửi Gateway
+          Gửi
         </Button>
       </form>
     </Card>
@@ -320,7 +323,9 @@ function GatewayFrequencyCard({
 export default function Controls() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [gatewayFrequencySeconds, setGatewayFrequencySeconds] = useState('10');
+  const canControl = user?.role !== 'viewer';
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices', 'list'],
@@ -381,26 +386,42 @@ export default function Controls() {
     mutationFn: (seconds) => deviceService.updateGatewayFrequency(seconds),
     onSuccess: (_data, seconds) => {
       toast({
-        title: 'Đã gửi cấu hình Gateway',
+        title: 'Đã gửi cấu hình tiết kiệm pin',
         description: `Tần suất cập nhật: ${seconds} giây.`,
       });
     },
     onError: (error) => {
       toast({
         variant: 'destructive',
-        title: 'Gửi cấu hình Gateway thất bại',
-        description: error?.message || 'Không thể gửi tần suất cập nhật xuống Gateway.',
+        title: 'Gửi cấu hình tiết kiệm pin thất bại',
+        description: error?.message || 'Không thể gửi tần suất cập nhật lúc này.',
       });
     },
   });
 
   const handleToggleDevice = (device, deviceId, isOn) => {
+    if (!canControl) {
+      toast({
+        variant: 'destructive',
+        title: 'Chỉ được xem',
+        description: 'Tài khoản viewer không được điều khiển thiết bị.',
+      });
+      return;
+    }
     if (!device) return;
     if (toggleMutation.isPending && toggleMutation.variables?.device_id === deviceId) return;
     toggleMutation.mutate({ device_id: deviceId, is_on: isOn });
   };
 
   const handleModeChange = (device, mode) => {
+    if (!canControl) {
+      toast({
+        variant: 'destructive',
+        title: 'Chỉ được xem',
+        description: 'Tài khoản viewer không được đổi chế độ thiết bị.',
+      });
+      return;
+    }
     if (!device || device.mode === mode) return;
     const deviceId = device.device_id || device.name;
     if (modeMutation.isPending && modeMutation.variables?.device_id === deviceId) return;
@@ -409,6 +430,15 @@ export default function Controls() {
 
   const handleGatewayFrequencySubmit = (event) => {
     event.preventDefault();
+
+    if (!canControl) {
+      toast({
+        variant: 'destructive',
+        title: 'Chỉ được xem',
+        description: 'Tài khoản viewer không được gửi cấu hình thiết bị.',
+      });
+      return;
+    }
 
     const seconds = Number(gatewayFrequencySeconds);
     if (!Number.isInteger(seconds) || seconds <= 0) {
@@ -441,9 +471,15 @@ export default function Controls() {
         </div>
         <Badge variant="outline" className="w-fit gap-1.5 border-primary/20 bg-primary/5 px-3 py-1 text-primary">
           <RadioTower className="h-3.5 w-3.5" />
-          {DEVICE_IDS.length} thiết bị
+          {canControl ? `${DEVICE_IDS.length} thiết bị` : 'Chế độ chỉ xem'}
         </Badge>
       </div>
+
+      {!canControl && (
+        <Card className="rounded-lg border-dashed bg-muted/40 p-4 text-sm text-muted-foreground shadow-none">
+          Tài khoản viewer chỉ được xem trạng thái thiết bị. Các thao tác bật/tắt, đổi chế độ và gửi cấu hình đã bị khóa.
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <SummaryCard
@@ -469,6 +505,7 @@ export default function Controls() {
       <GatewayFrequencyCard
         value={gatewayFrequencySeconds}
         isPending={gatewayFrequencyMutation.isPending}
+        canControl={canControl}
         onChange={setGatewayFrequencySeconds}
         onSubmit={handleGatewayFrequencySubmit}
       />
@@ -489,6 +526,7 @@ export default function Controls() {
               index={i}
               isTogglePending={isTogglePending}
               isModePending={isModePending}
+              canControl={canControl}
               onToggle={handleToggleDevice}
               onModeChange={handleModeChange}
             />

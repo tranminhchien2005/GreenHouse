@@ -157,6 +157,6 @@ export async function publishGatewayUpdateFrequency({ seconds, source = "manual"
     topic: GATEWAY_CONTROL_TOPIC,
     payload,
     seconds: normalizedSeconds,
-    message: `Đã gửi tần suất cập nhật ${normalizedSeconds} giây xuống Gateway.`,
+    message: `Đã gửi tần suất cập nhật ${normalizedSeconds} giây cho chế độ tiết kiệm pin.`,
   };
 }

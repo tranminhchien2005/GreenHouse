@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,15 +14,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { DEVICE_LABELS, SENSOR_LABELS } from '@/config/greenhouse';
 import { automationService } from '@/services/automationService';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
 
 const conditionLabels = { above: 'Lớn hơn', below: 'Nhỏ hơn', equals: 'Bằng' };
 const actionLabels = { turn_on: 'Bật', turn_off: 'Tắt' };
 
 export default function Automation() {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true });
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const canManageRules = user?.role !== 'viewer';
 
   const { data: rules = [] } = useQuery({
     queryKey: ['automationRules', 'list'],
@@ -83,6 +87,14 @@ export default function Automation() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!canManageRules) {
+      toast({
+        variant: 'destructive',
+        title: 'Chỉ được xem',
+        description: 'Tài khoản viewer không được tạo quy tắc tự động.',
+      });
+      return;
+    }
     createMutation.mutate({ ...form, threshold: Number(form.threshold) });
   };
 
@@ -93,71 +105,86 @@ export default function Automation() {
           <h1 className="text-2xl font-bold tracking-tight">Tự động hóa</h1>
           <p className="text-muted-foreground text-sm mt-1">Thiết lập quy tắc điều khiển tự động</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="w-4 h-4" />Thêm quy tắc</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Tạo quy tắc mới</DialogTitle></DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label>Tên quy tắc</Label>
-                <Input disabled={createMutation.isPending} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Tự động tưới khi đất khô" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Cảm biến</Label>
-                  <Select disabled={createMutation.isPending} value={form.sensor_type} onValueChange={(v) => setForm({ ...form, sensor_type: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(SENSOR_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Điều kiện</Label>
-                  <Select disabled={createMutation.isPending} value={form.condition} onValueChange={(v) => setForm({ ...form, condition: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="above">Lớn hơn</SelectItem>
-                      <SelectItem value="below">Nhỏ hơn</SelectItem>
-                      <SelectItem value="equals">Bằng</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div>
-                <Label>Ngưỡng giá trị</Label>
-                <Input disabled={createMutation.isPending} type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} placeholder="VD: 30" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>Thiết bị</Label>
-                  <Select disabled={createMutation.isPending} value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(DEVICE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Hành động</Label>
-                  <Select disabled={createMutation.isPending} value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
-                    <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="turn_on">Bật</SelectItem>
-                      <SelectItem value="turn_off">Tắt</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <Button type="submit" className="w-full" disabled={createMutation.isPending}>
-                {createMutation.isPending ? 'Đang tạo...' : 'Tạo quy tắc'}
+        <div className="flex items-center gap-2">
+          {!canManageRules && (
+            <Badge variant="outline" className="border-primary/20 bg-primary/5 text-primary">
+              Chế độ chỉ xem
+            </Badge>
+          )}
+          <Dialog open={open} onOpenChange={(nextOpen) => canManageRules && setOpen(nextOpen)}>
+            <DialogTrigger asChild>
+              <Button className="gap-2" disabled={!canManageRules}>
+                <Plus className="w-4 h-4" />
+                Thêm quy tắc
               </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Tạo quy tắc mới</DialogTitle></DialogHeader>
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div>
+                  <Label>Tên quy tắc</Label>
+                  <Input disabled={createMutation.isPending} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Tự động tưới khi đất khô" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Cảm biến</Label>
+                    <Select disabled={createMutation.isPending} value={form.sensor_type} onValueChange={(v) => setForm({ ...form, sensor_type: v })}>
+                      <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(SENSOR_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Điều kiện</Label>
+                    <Select disabled={createMutation.isPending} value={form.condition} onValueChange={(v) => setForm({ ...form, condition: v })}>
+                      <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="above">Lớn hơn</SelectItem>
+                        <SelectItem value="below">Nhỏ hơn</SelectItem>
+                        <SelectItem value="equals">Bằng</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div>
+                  <Label>Ngưỡng giá trị</Label>
+                  <Input disabled={createMutation.isPending} type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} placeholder="VD: 30" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Thiết bị</Label>
+                    <Select disabled={createMutation.isPending} value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
+                      <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(DEVICE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Hành động</Label>
+                    <Select disabled={createMutation.isPending} value={form.action} onValueChange={(v) => setForm({ ...form, action: v })}>
+                      <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="turn_on">Bật</SelectItem>
+                        <SelectItem value="turn_off">Tắt</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <Button type="submit" className="w-full" disabled={createMutation.isPending}>
+                  {createMutation.isPending ? 'Đang tạo...' : 'Tạo quy tắc'}
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
+      {!canManageRules && (
+        <Card className="rounded-lg border-dashed bg-muted/40 p-4 text-sm text-muted-foreground shadow-none">
+          Tài khoản viewer chỉ được xem danh sách quy tắc. Thao tác thêm, bật/tắt hoặc xóa quy tắc đã bị khóa.
+        </Card>
+      )}
 
       {rules.length === 0 ? (
         <Card className="p-12 border-0 shadow-sm text-center">
@@ -199,13 +226,13 @@ export default function Automation() {
                     <div className="flex items-center gap-3">
                       <Switch
                         checked={rule.is_active}
-                        disabled={isRulePending}
+                        disabled={isRulePending || !canManageRules}
                         onCheckedChange={(checked) => toggleMutation.mutate({ id: rule.id, is_active: checked })}
                       />
                       <Button
                         variant="ghost"
                         size="icon"
-                        disabled={isRulePending}
+                        disabled={isRulePending || !canManageRules}
                         onClick={() => deleteMutation.mutate(rule.id)}
                         className="text-muted-foreground hover:text-destructive"
                       >

@@ -16,7 +16,7 @@ async function requestGatewayUpdateFrequency(seconds) {
 
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({}));
-    const error = new Error(errorBody.message || 'Không thể gửi cấu hình Gateway');
+    const error = new Error(errorBody.message || 'Không thể gửi cấu hình tiết kiệm pin');
     error.status = response.status;
     throw error;
   }

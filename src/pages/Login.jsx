@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Leaf, Lock, UserPlus } from 'lucide-react';
+import { Eye, EyeOff, Leaf, Lock, UserPlus } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -9,8 +9,9 @@ import { Label } from '@/components/ui/label';
 export default function Login() {
   const { login, register } = useAuth();
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ username: 'admin', password: 'admin123' });
+  const [form, setForm] = useState({ username: '', password: '' });
   const [registerForm, setRegisterForm] = useState({ username: '', password: '', confirmPassword: '' });
+  const [visiblePasswords, setVisiblePasswords] = useState({});
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +65,36 @@ export default function Login() {
   };
 
   const isLogin = mode === 'login';
+  const togglePasswordVisibility = (key) => {
+    setVisiblePasswords((current) => ({ ...current, [key]: !current[key] }));
+  };
+
+  const renderPasswordInput = ({ id, value, onChange, autoComplete }) => {
+    const isVisible = Boolean(visiblePasswords[id]);
+    const Icon = isVisible ? EyeOff : Eye;
+
+    return (
+      <div className="relative">
+        <Input
+          id={id}
+          type={isVisible ? 'text' : 'password'}
+          value={value}
+          onChange={onChange}
+          autoComplete={autoComplete}
+          className="pr-10"
+          required
+        />
+        <button
+          type="button"
+          aria-label={isVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+          onClick={() => togglePasswordVisibility(id)}
+          className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+        >
+          <Icon className="h-4 w-4" />
+        </button>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
@@ -101,14 +132,12 @@ export default function Login() {
 
             <div className="space-y-2">
               <Label htmlFor="password">Mật khẩu</Label>
-              <Input
-                id="password"
-                type="password"
-                value={form.password}
-                onChange={(event) => setForm({ ...form, password: event.target.value })}
-                autoComplete="current-password"
-                required
-              />
+              {renderPasswordInput({
+                id: 'password',
+                value: form.password,
+                onChange: (event) => setForm({ ...form, password: event.target.value }),
+                autoComplete: 'current-password',
+              })}
             </div>
 
             {error && (
@@ -137,26 +166,22 @@ export default function Login() {
 
             <div className="space-y-2">
               <Label htmlFor="register-password">Mật khẩu</Label>
-              <Input
-                id="register-password"
-                type="password"
-                value={registerForm.password}
-                onChange={(event) => setRegisterForm({ ...registerForm, password: event.target.value })}
-                autoComplete="new-password"
-                required
-              />
+              {renderPasswordInput({
+                id: 'register-password',
+                value: registerForm.password,
+                onChange: (event) => setRegisterForm({ ...registerForm, password: event.target.value }),
+                autoComplete: 'new-password',
+              })}
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="register-confirm-password">Xác nhận mật khẩu</Label>
-              <Input
-                id="register-confirm-password"
-                type="password"
-                value={registerForm.confirmPassword}
-                onChange={(event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value })}
-                autoComplete="new-password"
-                required
-              />
+              {renderPasswordInput({
+                id: 'register-confirm-password',
+                value: registerForm.confirmPassword,
+                onChange: (event) => setRegisterForm({ ...registerForm, confirmPassword: event.target.value }),
+                autoComplete: 'new-password',
+              })}
             </div>
 
             {error && (
@@ -184,7 +209,7 @@ export default function Login() {
 
         <div className="mt-5 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
           {isLogin
-            ? 'Tài khoản mặc định: admin / admin123'
+            ? 'Đăng nhập bằng tài khoản đã được admin cấp hoặc duyệt.'
             : 'Tài khoản mới cần admin duyệt trước khi đăng nhập.'}
         </div>
       </Card>

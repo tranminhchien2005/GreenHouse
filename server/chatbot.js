@@ -498,6 +498,11 @@ export async function handleChatbot(req, res, parts) {
     const user = await requireUser(req, res);
     if (!user) return true;
 
+    if (user.role === "viewer") {
+      sendJson(res, 403, { message: "Tài khoản viewer chỉ được xem dữ liệu" });
+      return true;
+    }
+
     const body = await readBody(req);
     const command = normalizeDeviceCommand(body);
     if (!command) {
@@ -549,7 +554,7 @@ export async function handleChatbot(req, res, parts) {
 
   try {
     const reply = await askChatbot({ message, history, greenhouseContext });
-    const deviceActions = buildDeviceActions(message, greenhouseContext);
+    const deviceActions = user.role === "viewer" ? [] : buildDeviceActions(message, greenhouseContext);
     sendJson(res, 200, { reply, deviceActions });
   } catch (error) {
     const status = error.status === 503 ? 503 : 502;
