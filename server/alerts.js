@@ -10,8 +10,8 @@ const SENSOR_META = {
   humidity: { label: "Độ ẩm KK", unit: "%" },
   soil_moisture: { label: "Độ ẩm đất", unit: "%" },
   light: { label: "Ánh sáng", unit: "lux" },
-  gas: { label: "Khí gas", unit: "ppm" },
 };
+const alertSensorTypes = new Set(Object.keys(SENSOR_META));
 
 const validLevels = new Set(["info", "warning", "danger"]);
 export const ALERT_THRESHOLD_OPERATORS = [">", ">=", "<", "<=", "=="];
@@ -100,6 +100,7 @@ async function loadThresholds() {
   );
 
   thresholdCache = result.rows
+    .filter((row) => alertSensorTypes.has(row.sensor_type))
     .map((row) => {
       const operator = normalizeOperator(row.operator);
       if (!isValidAlertThresholdOperator(operator)) {
@@ -171,7 +172,6 @@ export async function evaluateAlertsForLatestReading(now = new Date().toISOStrin
     humidity: reading.humidity,
     soil_moisture: reading.soil_moisture,
     light: reading.light,
-    gas: reading.gas,
     created_date: reading.created_at,
   };
 

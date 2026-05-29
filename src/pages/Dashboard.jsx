@@ -1,6 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Thermometer, Droplets, CloudRain, Sun, Flame } from 'lucide-react';
+import { Thermometer, Droplets, CloudRain, Sun } from 'lucide-react';
 import SensorCard from '@/components/dashboard/SensorCard';
 import DeviceStatusBar from '@/components/dashboard/DeviceStatusBar';
 import RecentAlerts from '@/components/dashboard/RecentAlerts';
@@ -18,7 +18,6 @@ const sensorCards = [
   { type: 'humidity', icon: Droplets, label: SENSOR_LABELS.humidity, unit: '%', color: 'bg-blue-100 text-blue-600' },
   { type: 'soil_moisture', icon: CloudRain, label: SENSOR_LABELS.soil_moisture, unit: '%', color: 'bg-emerald-100 text-emerald-600' },
   { type: 'light', icon: Sun, label: SENSOR_LABELS.light, unit: 'lux', color: 'bg-amber-100 text-amber-600' },
-  { type: 'gas', icon: Flame, label: SENSOR_LABELS.gas, unit: 'ppm', color: 'bg-orange-100 text-orange-600' },
 ];
 
 const miniCharts = [
@@ -80,7 +79,7 @@ export default function Dashboard() {
       </div>
 
       {/* Sensor Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {sensorCards.map((sensor) => (
           <SensorCard
             key={sensor.type}

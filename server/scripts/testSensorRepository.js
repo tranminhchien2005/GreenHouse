@@ -12,7 +12,6 @@ try {
     humidity: 65,
     soilMoisture: 42,
     light: 1000,
-    gas: 120,
   });
   console.log("[SensorRepository] Created:", created);
 

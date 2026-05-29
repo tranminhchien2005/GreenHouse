@@ -12,6 +12,5 @@ CREATE TABLE IF NOT EXISTS alert_thresholds (
 INSERT INTO alert_thresholds (sensor_type, operator, value, level) VALUES
   ('temperature', '>', 40, 'warning'),
   ('temperature', '>', 50, 'danger'),
-  ('soil_moisture', '<', 30, 'warning'),
-  ('gas', '>', 300, 'danger')
+  ('soil_moisture', '<', 30, 'warning')
 ON CONFLICT DO NOTHING;

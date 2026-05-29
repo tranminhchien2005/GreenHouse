@@ -310,8 +310,6 @@ const sensorFieldAliases = [
   "soil",
   "light",
   "lux",
-  "gas",
-  "gasValue",
 ];
 
 function hasAnySensorField(data = {}) {
@@ -355,7 +353,6 @@ function toAutomationTestSensorData(data = {}) {
     soil_moisture: normalized.soil_moisture ?? null,
     soilMoisture: normalized.soil_moisture ?? null,
     light: normalized.light ?? null,
-    gas: normalized.gas ?? null,
     created_at: normalized.created_at ?? null,
     created_date: normalized.created_at ?? null,
   };
@@ -557,9 +554,6 @@ function toLegacyDailySensorStats(row) {
     avg_light: row.avg_light == null ? null : Number(row.avg_light),
     min_light: row.min_light == null ? null : Number(row.min_light),
     max_light: row.max_light == null ? null : Number(row.max_light),
-    avg_gas: row.avg_gas == null ? null : Number(row.avg_gas),
-    min_gas: row.min_gas == null ? null : Number(row.min_gas),
-    max_gas: row.max_gas == null ? null : Number(row.max_gas),
   };
 }
 

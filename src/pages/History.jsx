@@ -29,13 +29,13 @@ const METRICS = [
   { key: "humidity", label: "Độ ẩm KK", unit: "%", stroke: "#3b82f6", fill: "#bfdbfe" },
   { key: "soil_moisture", label: "Độ ẩm đất", unit: "%", stroke: "#22c55e", fill: "#bbf7d0" },
   { key: "light", label: "Ánh sáng", unit: "lux", stroke: "#eab308", fill: "#fef08a" },
-  { key: "gas", label: "Khí gas", unit: "ppm", stroke: "#f97316", fill: "#fed7aa" },
 ];
 
 const CHART_HEIGHT = 300;
 const HISTORY_LIMIT = 50;
 const SKELETON_ROWS = 8;
 const DAILY_STATS_SKELETON_ROWS = 4;
+const DATA_COLUMN_COUNT = 5;
 
 function getCreatedAt(item) {
   return item?.created_at || item?.created_date || null;
@@ -169,14 +169,13 @@ export default function History() {
 
   const handleExportCsv = () => {
     const rows = [
-      ["time", "temperature", "humidity", "soil_moisture", "light", "gas"],
+      ["time", "temperature", "humidity", "soil_moisture", "light"],
       ...history.map((item) => [
         getCreatedAt(item) || "",
         item.temperature ?? "",
         item.humidity ?? "",
         item.soil_moisture ?? "",
         item.light ?? "",
-        item.gas ?? "",
       ]),
     ];
 
@@ -332,14 +331,13 @@ export default function History() {
                 <th className="px-3 py-2.5">Độ ẩm TB</th>
                 <th className="px-3 py-2.5">Đất TB</th>
                 <th className="px-3 py-2.5">Ánh sáng TB</th>
-                <th className="px-3 py-2.5">Gas max</th>
               </tr>
             </thead>
             <tbody>
               {isDailyStatsLoading ? (
                 Array.from({ length: DAILY_STATS_SKELETON_ROWS }).map((_, idx) => (
                   <tr key={`daily-skeleton-${idx}`} className="border-b last:border-b-0 animate-pulse">
-                    {Array.from({ length: 6 }).map((__, cellIdx) => (
+                    {Array.from({ length: DATA_COLUMN_COUNT }).map((__, cellIdx) => (
                       <td key={cellIdx} className="px-3 py-3">
                         <div className="h-3 rounded bg-muted/70" />
                       </td>
@@ -348,7 +346,7 @@ export default function History() {
                 ))
               ) : dailyStats.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                  <td colSpan={DATA_COLUMN_COUNT} className="px-3 py-8 text-center text-muted-foreground">
                     Chưa có dữ liệu thống kê
                   </td>
                 </tr>
@@ -362,7 +360,6 @@ export default function History() {
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_humidity)} %</td>
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_soil_moisture)} %</td>
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.avg_light)} lux</td>
-                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.max_gas)} ppm</td>
                   </tr>
                 ))
               )}
@@ -387,14 +384,13 @@ export default function History() {
                 <th className="px-3 py-2.5">Độ ẩm KK (%)</th>
                 <th className="px-3 py-2.5">Độ ẩm đất (%)</th>
                 <th className="px-3 py-2.5">Ánh sáng (lux)</th>
-                <th className="px-3 py-2.5">Khí gas (ppm)</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 Array.from({ length: SKELETON_ROWS }).map((_, idx) => (
                   <tr key={`skeleton-${idx}`} className="border-b last:border-b-0 animate-pulse">
-                    {Array.from({ length: 6 }).map((__, cellIdx) => (
+                    {Array.from({ length: DATA_COLUMN_COUNT }).map((__, cellIdx) => (
                       <td key={cellIdx} className="px-3 py-3">
                         <div className="h-3 rounded bg-muted/70" />
                       </td>
@@ -404,7 +400,7 @@ export default function History() {
               ) : history.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={DATA_COLUMN_COUNT}
                     className="px-3 py-8 text-center text-muted-foreground"
                   >
                     Chưa có dữ liệu
@@ -423,7 +419,6 @@ export default function History() {
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.humidity)}</td>
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.soil_moisture)}</td>
                     <td className="px-3 py-2.5 font-medium">{formatNumber(item.light)}</td>
-                    <td className="px-3 py-2.5 font-medium">{formatNumber(item.gas)}</td>
                   </tr>
                 ))
               )}

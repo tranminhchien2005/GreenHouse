@@ -3,7 +3,6 @@ export const SENSOR_LABELS = {
   humidity: 'Độ ẩm KK',
   soil_moisture: 'Độ ẩm đất',
   light: 'Ánh sáng',
-  gas: 'Khí gas',
 };
 
 export const DEVICE_IDS = ['pump', 'fan', 'light'];

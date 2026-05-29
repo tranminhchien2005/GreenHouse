@@ -47,7 +47,6 @@ function mapSensorRecord(record = {}) {
       record.soil_moisture ?? record.soilMoisture ?? record.soil ?? record.soil_moisture_percent,
     ),
     light: toNumberOrNull(record.light ?? record.lux),
-    gas: toNumberOrNull(record.gas ?? record.gasValue),
   };
 
   const createdAt = normalizeDate(
@@ -67,7 +66,6 @@ function hasAnySensorValue(reading) {
     reading.humidity,
     reading.soil_moisture,
     reading.light,
-    reading.gas,
   ].some((value) => value != null);
 }
 

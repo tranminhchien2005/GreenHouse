@@ -25,6 +25,7 @@ const sortableFields = new Set([
 ]);
 const validOperators = new Set([">", ">=", "<", "<=", "=="]);
 const validActions = new Set(["turn_on", "turn_off"]);
+const validSensorTypes = new Set(["temperature", "humidity", "soil_moisture", "light"]);
 const conditionOperatorMap = {
   above: ">",
   below: "<",
@@ -132,6 +133,7 @@ function normalizeAutomationRule(data = {}) {
 
 function validateAutomationRuleForCreate(rule) {
   if (!rule.sensor_type) throw new Error("sensor_type is required");
+  if (!validSensorTypes.has(rule.sensor_type)) throw new Error("sensor_type is invalid");
   if (!rule.operator) throw new Error("operator is required");
   if (rule.threshold == null) throw new Error("threshold must be a valid number");
   if (!rule.device_id && !rule.device_name) throw new Error("device_name or device_id is required");
@@ -144,6 +146,7 @@ function getUpdateFields(data = {}) {
 
   if (hasOwn(data, "name")) fields.push(["name", normalized.name]);
   if (hasOwn(data, "sensor_type") || hasOwn(data, "sensorType") || hasOwn(data, "sensor")) {
+    if (!validSensorTypes.has(normalized.sensor_type)) throw new Error("sensor_type is invalid");
     fields.push(["sensor_type", normalized.sensor_type]);
   }
   if (hasOwn(data, "operator") || hasOwn(data, "condition")) {

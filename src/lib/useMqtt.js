@@ -51,7 +51,6 @@ export function useSensorData() {
           humidity: data.humidity,
           soil_moisture: data.soil_moisture,
           light: data.light,
-          gas: data.gas,
         };
 
         queryClient.setQueriesData({ queryKey: ['sensorData', 'history'] }, (old) => {

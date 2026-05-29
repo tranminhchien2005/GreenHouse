@@ -54,7 +54,7 @@ Nguyên tắc trả lời:
 13. Nếu plant_profile_status là "not_found_use_general_agriculture_knowledge", hãy tư vấn bằng kiến thức nông nghiệp phổ thông và nói rõ đây là khuyến nghị chung.
 14. Không được nói database có ngưỡng riêng nếu plant_profile là null.
 15. Nếu người dùng hỏi "cây này" nhưng selected_user_plant là null và active_user_plants có nhiều cây, hãy hỏi người dùng chọn cây/khu vực cụ thể.
-16. Dùng đúng đơn vị trong context: nhiệt độ °C, độ ẩm không khí %, độ ẩm đất %, ánh sáng lux, khí gas ppm.
+16. Dùng đúng đơn vị trong context: nhiệt độ °C, độ ẩm không khí %, độ ẩm đất %, ánh sáng lux.
 17. Khi hiển thị số, làm gọn số nếu phù hợp: viết 800 thay vì 800.00, 28.5 thay vì 28.50.
 18. Chỉ nhắc cảnh báo có trong recent_alerts. Nếu recent_alerts rỗng, không nhắc cảnh báo cũ.
 19. Trả lời ngắn gọn, ưu tiên tối đa 4-6 gạch đầu dòng. Không mở đầu dài dòng nếu không cần.
@@ -148,7 +148,6 @@ function compactSensorReading(reading) {
     humidity: toCompactNumber(reading.humidity),
     soil_moisture: toCompactNumber(reading.soil_moisture),
     light: toCompactNumber(reading.light),
-    gas: toCompactNumber(reading.gas),
     created_at: reading.created_at,
   };
 }
@@ -400,7 +399,6 @@ async function getGreenhouseContext(message, plantId) {
       humidity: "%",
       soil_moisture: "%",
       light: "lux",
-      gas: "ppm",
     },
     selected_user_plant: compactUserPlant(selectedUserPlant),
     user_plant_status: getUserPlantStatus(selectedUserPlant, plantId, activeUserPlants),

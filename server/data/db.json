@@ -94,17 +94,6 @@
       "is_read": false,
       "created_date": "2026-04-30T04:36:36.715Z",
       "id": "4fc88e1c-a651-470a-ac3d-be952cf3d577"
-    },
-    {
-      "type": "danger",
-      "level": "danger",
-      "message": "Nguy hiểm! Phát hiện khí gas hoặc cháy. Giá trị: 350 ppm, ngưỡng: 300 ppm",
-      "sensor_type": "gas",
-      "value": 350,
-      "threshold": 300,
-      "is_read": false,
-      "created_date": "2026-04-30T04:36:36.715Z",
-      "id": "702d3a4d-1e38-4c9b-88dc-edcced02c8ab"
     }
   ],
   "Users": [

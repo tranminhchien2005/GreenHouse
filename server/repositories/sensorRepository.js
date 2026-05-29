@@ -1,7 +1,7 @@
 import { query } from "../database.js";
 
-const sensorColumns = "id, temperature, humidity, soil_moisture, light, gas, created_at";
-const sortableFields = new Set(["created_at", "temperature", "humidity", "soil_moisture", "light", "gas"]);
+const sensorColumns = "id, temperature, humidity, soil_moisture, light, created_at";
+const sortableFields = new Set(["created_at", "temperature", "humidity", "soil_moisture", "light"]);
 
 function toNumberOrNull(value) {
   if (value == null || value === "") return null;
@@ -47,7 +47,6 @@ function normalizeSensorReading(data = {}) {
     humidity: toNumberOrNull(data.humidity),
     soil_moisture: toNumberOrNull(data.soil_moisture ?? data.soilMoisture ?? data.soil),
     light: toNumberOrNull(data.light ?? data.lux),
-    gas: toNumberOrNull(data.gas ?? data.gasValue),
     created_at: data.created_at ?? data.createdAt ?? data.timestamp ?? data.created_date ?? null,
   };
 }
@@ -105,8 +104,8 @@ export async function getLatestSensorReading() {
 
 export async function createSensorReading(data) {
   const reading = normalizeSensorReading(data);
-  const columns = ["temperature", "humidity", "soil_moisture", "light", "gas"];
-  const values = [reading.temperature, reading.humidity, reading.soil_moisture, reading.light, reading.gas];
+  const columns = ["temperature", "humidity", "soil_moisture", "light"];
+  const values = [reading.temperature, reading.humidity, reading.soil_moisture, reading.light];
 
   if (reading.created_at) {
     columns.push("created_at");
@@ -142,7 +141,6 @@ export async function findDuplicateSensorReading(data) {
         AND humidity IS NOT DISTINCT FROM $3
         AND soil_moisture IS NOT DISTINCT FROM $4
         AND light IS NOT DISTINCT FROM $5
-        AND gas IS NOT DISTINCT FROM $6
       LIMIT 1
     `,
     [
@@ -151,7 +149,6 @@ export async function findDuplicateSensorReading(data) {
       reading.humidity,
       reading.soil_moisture,
       reading.light,
-      reading.gas,
     ],
   );
 
@@ -187,10 +184,7 @@ export async function getDailyStats(options = {}) {
         MAX(soil_moisture) AS max_soil_moisture,
         AVG(light) AS avg_light,
         MIN(light) AS min_light,
-        MAX(light) AS max_light,
-        AVG(gas) AS avg_gas,
-        MIN(gas) AS min_gas,
-        MAX(gas) AS max_gas
+        MAX(light) AS max_light
       FROM sensor_readings
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       GROUP BY created_at::date

@@ -34,7 +34,6 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
   temperature DOUBLE PRECISION,
   humidity DOUBLE PRECISION,
   soil_moisture DOUBLE PRECISION,
-  gas DOUBLE PRECISION,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

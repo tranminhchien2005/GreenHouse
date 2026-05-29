@@ -20,8 +20,7 @@ WITH demo_thresholds(sensor_type, operator, value, level) AS (
     ('soil_moisture', '<', 30, 'warning'),
     ('soil_moisture', '<', 20, 'danger'),
     ('light', '<', 350, 'warning'),
-    ('light', '>', 1000, 'warning'),
-    ('gas', '>', 300, 'danger')
+    ('light', '>', 1000, 'warning')
 )
 INSERT INTO alert_thresholds (sensor_type, operator, value, level)
 SELECT sensor_type, operator, value, level
@@ -51,21 +50,21 @@ WHERE NOT EXISTS (
   WHERE existing.name = r.name
 );
 
-INSERT INTO sensor_readings (temperature, humidity, soil_moisture, light, gas, created_at)
+INSERT INTO sensor_readings (temperature, humidity, soil_moisture, light, created_at)
 SELECT *
 FROM (
   VALUES
-    (27.2, 70.0, 52.0, 620.0, 92.0, NOW() - INTERVAL '55 minutes'),
-    (27.8, 69.0, 49.0, 660.0, 95.0, NOW() - INTERVAL '50 minutes'),
-    (28.1, 68.0, 46.0, 710.0, 98.0, NOW() - INTERVAL '45 minutes'),
-    (28.6, 67.0, 43.0, 760.0, 102.0, NOW() - INTERVAL '40 minutes'),
-    (29.0, 66.0, 39.0, 800.0, 105.0, NOW() - INTERVAL '35 minutes'),
-    (29.3, 65.0, 35.0, 820.0, 108.0, NOW() - INTERVAL '30 minutes'),
-    (29.6, 64.0, 31.0, 790.0, 112.0, NOW() - INTERVAL '25 minutes'),
-    (29.8, 64.0, 28.0, 760.0, 115.0, NOW() - INTERVAL '20 minutes'),
-    (30.0, 65.0, 25.0, 730.0, 118.0, NOW() - INTERVAL '15 minutes'),
-    (30.0, 65.0, 20.0, 700.0, 100.0, NOW() - INTERVAL '10 minutes')
-) AS demo(temperature, humidity, soil_moisture, light, gas, created_at)
+    (27.2, 70.0, 52.0, 620.0, NOW() - INTERVAL '55 minutes'),
+    (27.8, 69.0, 49.0, 660.0, NOW() - INTERVAL '50 minutes'),
+    (28.1, 68.0, 46.0, 710.0, NOW() - INTERVAL '45 minutes'),
+    (28.6, 67.0, 43.0, 760.0, NOW() - INTERVAL '40 minutes'),
+    (29.0, 66.0, 39.0, 800.0, NOW() - INTERVAL '35 minutes'),
+    (29.3, 65.0, 35.0, 820.0, NOW() - INTERVAL '30 minutes'),
+    (29.6, 64.0, 31.0, 790.0, NOW() - INTERVAL '25 minutes'),
+    (29.8, 64.0, 28.0, 760.0, NOW() - INTERVAL '20 minutes'),
+    (30.0, 65.0, 25.0, 730.0, NOW() - INTERVAL '15 minutes'),
+    (30.0, 65.0, 20.0, 700.0, NOW() - INTERVAL '10 minutes')
+) AS demo(temperature, humidity, soil_moisture, light, created_at)
 WHERE NOT EXISTS (SELECT 1 FROM sensor_readings);
 
 INSERT INTO alerts (sensor_type, level, message, value, is_read, created_at)

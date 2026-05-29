@@ -16,7 +16,6 @@ export function toSensorRepositoryData(data = {}) {
     humidity: data.humidity,
     soil_moisture: data.soil_moisture ?? data.soilMoisture ?? data.soil,
     light: data.light ?? data.lux,
-    gas: data.gas ?? data.gasValue,
     created_at: data.created_at ?? data.createdAt ?? data.timestamp ?? data.created_date,
   };
 
@@ -33,7 +32,6 @@ export function hasAnyValidSensorValue(data = {}) {
     data.humidity,
     data.soil_moisture ?? data.soilMoisture ?? data.soil,
     data.light ?? data.lux,
-    data.gas ?? data.gasValue,
   ].some((value) => toNumberOrNull(value) != null);
 }
 
@@ -47,7 +45,6 @@ export function toLegacySensorData(reading) {
     soil_moisture: reading.soil_moisture,
     soilMoisture: reading.soil_moisture,
     light: reading.light,
-    gas: reading.gas,
     created_at: reading.created_at,
     created_date: reading.created_at,
   };
