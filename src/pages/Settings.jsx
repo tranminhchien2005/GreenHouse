@@ -20,15 +20,36 @@ import { cn } from '@/lib/utils';
 
 const TABS = [
   { key: 'profile', label: 'Hồ sơ' },
+  { key: 'users', label: 'Người dùng', adminOnly: true },
   { key: 'plants', label: 'Cây trồng' },
   { key: 'thresholds', label: 'Ngưỡng cảnh báo', adminOnly: true },
 ];
 
 const ROLE_BADGES = {
-  admin: { className: 'bg-green-100 text-green-700 hover:bg-green-100', label: 'admin' },
-  operator: { className: 'bg-blue-100 text-blue-700 hover:bg-blue-100', label: 'operator' },
-  viewer: { className: 'bg-slate-100 text-slate-700 hover:bg-slate-100', label: 'viewer' },
+  admin: { className: 'bg-green-100 text-green-700 hover:bg-green-100', label: 'Admin' },
+  operator: { className: 'bg-blue-100 text-blue-700 hover:bg-blue-100', label: 'Vận hành' },
+  viewer: { className: 'bg-slate-100 text-slate-700 hover:bg-slate-100', label: 'Chỉ xem' },
 };
+
+const USER_STATUS_BADGES = {
+  pending: { className: 'bg-amber-100 text-amber-700 hover:bg-amber-100', label: 'Chờ duyệt' },
+  active: { className: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100', label: 'Hoạt động' },
+  rejected: { className: 'bg-red-100 text-red-700 hover:bg-red-100', label: 'Từ chối' },
+  disabled: { className: 'bg-slate-100 text-slate-700 hover:bg-slate-100', label: 'Đã khóa' },
+};
+
+const ROLE_OPTIONS = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'operator', label: 'Vận hành' },
+  { value: 'viewer', label: 'Chỉ xem' },
+];
+
+const USER_STATUS_OPTIONS = [
+  { value: 'pending', label: 'Chờ duyệt' },
+  { value: 'active', label: 'Hoạt động' },
+  { value: 'rejected', label: 'Từ chối' },
+  { value: 'disabled', label: 'Đã khóa' },
+];
 
 const SENSOR_LABELS = {
   temperature: 'Nhiệt độ',
@@ -59,6 +80,12 @@ const EMPTY_PLANT_FORM = {
   plant_profile_id: '',
   planted_at: '',
   notes: '',
+};
+const EMPTY_USER_FORM = {
+  username: '',
+  password: '',
+  role: 'operator',
+  status: 'active',
 };
 const MANUAL_PLANT_PROFILE_VALUE = 'manual';
 
@@ -144,8 +171,29 @@ async function deactivateUserPlant(id) {
   return appClient.entities.UserPlant.delete(id);
 }
 
+async function listUsers() {
+  return appClient.entities.User.list('created_at', 500);
+}
+
+async function createUser(data) {
+  return appClient.entities.User.create(data);
+}
+
+async function updateUser(id, patch) {
+  return appClient.entities.User.update(id, patch);
+}
+
+async function deleteUser(id) {
+  return appClient.entities.User.delete(id);
+}
+
 function RoleBadge({ role }) {
   const config = ROLE_BADGES[role] || ROLE_BADGES.viewer;
+  return <Badge className={config.className}>{config.label}</Badge>;
+}
+
+function UserStatusBadge({ status }) {
+  const config = USER_STATUS_BADGES[status] || USER_STATUS_BADGES.pending;
   return <Badge className={config.className}>{config.label}</Badge>;
 }
 
@@ -214,7 +262,7 @@ function ProfileTab() {
           Thông tin tài khoản đăng nhập hệ thống
         </p>
 
-        <div className="mt-5 grid gap-5 sm:grid-cols-2">
+        <div className="mt-5 grid gap-5 sm:grid-cols-3">
           <div className="space-y-2">
             <Label htmlFor="profile-username">Tên đăng nhập</Label>
             <Input
@@ -229,6 +277,13 @@ function ProfileTab() {
             <Label>Vai trò</Label>
             <div className="flex h-10 items-center">
               <RoleBadge role={user?.role} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Trạng thái</Label>
+            <div className="flex h-10 items-center">
+              <UserStatusBadge status={user?.status || 'active'} />
             </div>
           </div>
         </div>
@@ -284,6 +339,293 @@ function ProfileTab() {
             {mutation.isPending ? 'Đang cập nhật...' : 'Cập nhật mật khẩu'}
           </Button>
         </form>
+      </Card>
+    </div>
+  );
+}
+
+function UserManagementTab() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState(EMPTY_USER_FORM);
+
+  const { data: users = [], isLoading } = useQuery({
+    queryKey: ['users'],
+    queryFn: listUsers,
+    refetchOnMount: 'always',
+  });
+
+  const createMutation = useMutation({
+    mutationFn: createUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      setForm(EMPTY_USER_FORM);
+      toast({ title: 'Đã tạo tài khoản' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Tạo tài khoản thất bại',
+        description: error?.message || 'Không thể tạo tài khoản.',
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, patch }) => updateUser(id, patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast({ title: 'Đã cập nhật tài khoản' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Cập nhật tài khoản thất bại',
+        description: error?.message || 'Không thể cập nhật tài khoản.',
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast({ title: 'Đã xóa tài khoản' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Xóa tài khoản thất bại',
+        description: error?.message || 'Không thể xóa tài khoản.',
+      });
+    },
+  });
+
+  const pendingUsers = users.filter((item) => item.status === 'pending');
+  const isCreating = createMutation.isPending;
+
+  const handleCreate = (event) => {
+    event.preventDefault();
+    if (!form.username.trim() || form.password.length < 6) {
+      toast({
+        variant: 'destructive',
+        title: 'Dữ liệu chưa hợp lệ',
+        description: 'Tên đăng nhập là bắt buộc và mật khẩu phải có tối thiểu 6 ký tự.',
+      });
+      return;
+    }
+
+    createMutation.mutate({
+      username: form.username.trim(),
+      password: form.password,
+      role: form.role,
+      status: form.status,
+    });
+  };
+
+  const updateAccount = (id, patch) => {
+    updateMutation.mutate({ id, patch });
+  };
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-[minmax(320px,420px)_1fr]">
+      <Card className="p-6 border-0 shadow-sm">
+        <h2 className="text-base font-semibold">Tạo tài khoản</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          Tài khoản do admin tạo có thể hoạt động ngay hoặc để ở trạng thái chờ duyệt
+        </p>
+
+        <form onSubmit={handleCreate} className="mt-5 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="new-user-username">Tên đăng nhập</Label>
+            <Input
+              id="new-user-username"
+              value={form.username}
+              onChange={(event) => setForm((prev) => ({ ...prev, username: event.target.value }))}
+              disabled={isCreating}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="new-user-password">Mật khẩu tạm thời</Label>
+            <Input
+              id="new-user-password"
+              type="password"
+              value={form.password}
+              onChange={(event) => setForm((prev) => ({ ...prev, password: event.target.value }))}
+              disabled={isCreating}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label>Vai trò</Label>
+              <Select
+                value={form.role}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, role: value }))}
+                disabled={isCreating}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {ROLE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Trạng thái</Label>
+              <Select
+                value={form.status}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, status: value }))}
+                disabled={isCreating}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {USER_STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Button type="submit" disabled={isCreating}>
+            {isCreating ? 'Đang tạo...' : 'Tạo tài khoản'}
+          </Button>
+        </form>
+      </Card>
+
+      <Card className="p-6 border-0 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h2 className="text-base font-semibold">Quản lý người dùng</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Duyệt tài khoản đăng ký mới và phân quyền truy cập
+            </p>
+          </div>
+          <Badge variant="outline" className="w-fit">
+            {pendingUsers.length} chờ duyệt
+          </Badge>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, index) => (
+              <div key={index} className="h-24 rounded-md border bg-muted/40 animate-pulse" />
+            ))
+          ) : users.length === 0 ? (
+            <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
+              Chưa có tài khoản nào
+            </div>
+          ) : (
+            users.map((account) => {
+              const isCurrentUser = account.id === user?.id;
+              const isUpdatingThis =
+                updateMutation.isPending && updateMutation.variables?.id === account.id;
+              const isDeletingThis =
+                deleteMutation.isPending && deleteMutation.variables === account.id;
+              const isBusy = isUpdatingThis || isDeletingThis;
+
+              return (
+                <div
+                  key={account.id}
+                  className="flex flex-col gap-4 rounded-md border p-4 lg:flex-row lg:items-center lg:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-medium">{account.username}</h3>
+                      {isCurrentUser && <Badge variant="outline">Bạn</Badge>}
+                      <RoleBadge role={account.role} />
+                      <UserStatusBadge status={account.status} />
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Tạo ngày {account.created_at ? String(account.created_at).slice(0, 10) : 'không rõ'}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Select
+                      value={account.role}
+                      onValueChange={(value) => updateAccount(account.id, { role: value })}
+                      disabled={isBusy || isCurrentUser}
+                    >
+                      <SelectTrigger className="w-full sm:w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ROLE_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    <Select
+                      value={account.status || 'active'}
+                      onValueChange={(value) => updateAccount(account.id, { status: value })}
+                      disabled={isBusy || isCurrentUser}
+                    >
+                      <SelectTrigger className="w-full sm:w-36">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {USER_STATUS_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {account.status === 'pending' && (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => updateAccount(account.id, { status: 'active' })}
+                          disabled={isBusy}
+                        >
+                          Duyệt
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => updateAccount(account.id, { status: 'rejected' })}
+                          disabled={isBusy}
+                        >
+                          Từ chối
+                        </Button>
+                      </>
+                    )}
+
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => deleteMutation.mutate(account.id)}
+                      disabled={isBusy || isCurrentUser}
+                    >
+                      {isDeletingThis ? 'Đang xóa...' : 'Xóa'}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
       </Card>
     </div>
   );
@@ -818,6 +1160,7 @@ export default function Settings() {
       </div>
 
       {safeActiveTab === 'thresholds' && <ThresholdsTab />}
+      {safeActiveTab === 'users' && <UserManagementTab />}
       {safeActiveTab === 'plants' && <PlantsTab />}
       {safeActiveTab === 'profile' && <ProfileTab />}
     </div>

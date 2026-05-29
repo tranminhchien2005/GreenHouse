@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { pool } from "./database.js";
 import { readBody, sendJson } from "./httpUtils.js";
 import {
+  createUser,
   findUserById,
   findUserByUsername,
 } from "./repositories/userRepository.js";
@@ -23,6 +24,7 @@ function toPublicUser(user) {
     username: user.username,
     name: user.name || user.username,
     role: user.role,
+    status: user.status || "active",
   };
 }
 
@@ -33,6 +35,7 @@ function createToken(user) {
       userId: user.id,
       username: user.username,
       role: user.role,
+      status: user.status || "active",
     },
     jwtSecret,
     { expiresIn: jwtExpiresIn },
@@ -55,6 +58,7 @@ export async function getUserFromToken(token) {
   if (!userId) return null;
 
   const user = await findUserById(userId);
+  if ((user?.status || "active") !== "active") return null;
   return toPublicUser(user);
 }
 
@@ -79,7 +83,77 @@ export async function requireUser(req, res) {
   return req.user;
 }
 
+export async function requireAdmin(req, res) {
+  const user = await requireUser(req, res);
+  if (!user) return null;
+
+  if (user.role !== "admin") {
+    sendJson(res, 403, { message: "Không có quyền admin" });
+    return null;
+  }
+
+  return user;
+}
+
+function validatePassword(password) {
+  if (!password || password.length < 6) {
+    return "Mật khẩu phải có tối thiểu 6 ký tự";
+  }
+
+  return null;
+}
+
+function getInactiveUserMessage(status) {
+  if (status === "pending") return "Tài khoản đang chờ admin duyệt";
+  if (status === "rejected") return "Tài khoản đã bị từ chối";
+  if (status === "disabled") return "Tài khoản đã bị khóa";
+  return "Tài khoản chưa được kích hoạt";
+}
+
 export async function handleAuth(req, res, parts) {
+  if (req.method === "POST" && parts[1] === "register") {
+    const body = await readBody(req);
+    const username = String(body.username || "").trim();
+    const password = String(body.password || "");
+
+    if (username.length < 3) {
+      sendJson(res, 400, { message: "Tên đăng nhập phải có tối thiểu 3 ký tự" });
+      return true;
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      sendJson(res, 400, { message: passwordError });
+      return true;
+    }
+
+    try {
+      const passwordHash = await hash(password, 10);
+      const user = await createUser({
+        username,
+        password_hash: passwordHash,
+        role: "viewer",
+        status: "pending",
+      });
+
+      sendJson(res, 201, {
+        success: true,
+        message: "Đăng ký thành công. Vui lòng chờ admin duyệt tài khoản.",
+        user: toPublicUser(user),
+      });
+    } catch (error) {
+      if (error.code === "23505") {
+        sendJson(res, 409, { message: "Tên đăng nhập đã tồn tại" });
+        return true;
+      }
+
+      console.error("[Auth] Register failed:", error.message);
+      sendJson(res, 400, { message: error.message || "Đăng ký thất bại" });
+    }
+
+    return true;
+  }
+
   if (req.method === "POST" && parts[1] === "login") {
     const credentials = await readBody(req);
     const username = String(credentials.username || "").trim();
@@ -89,6 +163,11 @@ export async function handleAuth(req, res, parts) {
 
     if (!user || !passwordMatches) {
       sendJson(res, 401, { message: "Sai tài khoản hoặc mật khẩu" });
+      return true;
+    }
+
+    if ((user.status || "active") !== "active") {
+      sendJson(res, 403, { message: getInactiveUserMessage(user.status) });
       return true;
     }
 

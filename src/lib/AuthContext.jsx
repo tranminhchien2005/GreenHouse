@@ -47,6 +47,8 @@ export const AuthProvider = ({ children }) => {
     return currentUser;
   };
 
+  const register = async (data) => appClient.auth.register(data);
+
   const logout = async () => {
     setUser(null);
     setAuthError(AUTH_REQUIRED_ERROR);
@@ -64,6 +66,7 @@ export const AuthProvider = ({ children }) => {
       isLoadingAuth,
       authError,
       login,
+      register,
       logout,
       checkUserAuth,
     }}>

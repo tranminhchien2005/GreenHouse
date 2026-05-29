@@ -84,6 +84,12 @@ export const appClient = {
       setToken(result.token);
       return result.user;
     },
+    async register(data) {
+      return request("/auth/register", {
+        method: "POST",
+        body: JSON.stringify(data),
+      });
+    },
     async me() {
       return request("/auth/me");
     },
@@ -104,6 +110,7 @@ export const appClient = {
     AlertThreshold: createEntityStore("AlertThreshold"),
     PlantProfile: createEntityStore("PlantProfile"),
     UserPlant: createEntityStore("UserPlant"),
+    User: createEntityStore("User"),
   },
   devices: {
     async command(deviceId, data) {

@@ -1,3 +1,4 @@
+import { hash } from "bcryptjs";
 import { requireUser } from "./auth.js";
 import { pool } from "./database.js";
 import { readBody, sendJson } from "./httpUtils.js";
@@ -71,6 +72,14 @@ import {
   listUserPlants,
   updateUserPlant,
 } from "./repositories/userPlantRepository.js";
+import {
+  countActiveAdmins,
+  createUser as createSystemUser,
+  deleteUser as deleteSystemUser,
+  findUserById as findSystemUserById,
+  listUsers,
+  updateUser as updateSystemUser,
+} from "./repositories/userRepository.js";
 
 const allowedEntities = new Set([
   "SensorData",
@@ -81,7 +90,12 @@ const allowedEntities = new Set([
   "AlertThreshold",
   "PlantProfile",
   "UserPlant",
+  "User",
 ]);
+
+function hasOwn(data, key) {
+  return Object.prototype.hasOwnProperty.call(data, key);
+}
 
 function sortItems(items, sortBy) {
   if (!sortBy) return items;
@@ -495,6 +509,77 @@ function toLegacyUserPlant(plant) {
     created_at: plant.created_at,
     updated_at: plant.updated_at,
   };
+}
+
+function toLegacyUser(user) {
+  if (!user) return null;
+
+  return {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    status: user.status || "active",
+    created_at: user.created_at,
+    created_date: user.created_at,
+    updated_at: user.updated_at,
+    updated_date: user.updated_at,
+  };
+}
+
+function getUserSortOptions(url) {
+  const rawSortBy = url.searchParams.get("sortBy");
+  const sortOrderParam = url.searchParams.get("sortOrder");
+  const isDesc = rawSortBy?.startsWith("-");
+  const sortByValue = isDesc ? rawSortBy.slice(1) : rawSortBy;
+  const sortFieldAliases = {
+    created_date: "created_at",
+    updated_date: "updated_at",
+  };
+
+  return {
+    limit: url.searchParams.get("limit"),
+    page: url.searchParams.get("page"),
+    role: url.searchParams.get("role"),
+    status: url.searchParams.get("status"),
+    username: url.searchParams.get("username"),
+    sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
+    sortOrder: isDesc ? "desc" : sortOrderParam,
+  };
+}
+
+async function getUserRepositoryData(data = {}, { requirePassword = false } = {}) {
+  const mapped = {};
+
+  if (hasOwn(data, "username")) mapped.username = String(data.username || "").trim();
+  if (hasOwn(data, "role")) mapped.role = data.role;
+  if (hasOwn(data, "status")) mapped.status = data.status;
+
+  if (hasOwn(data, "password")) {
+    const password = String(data.password || "");
+    if (password.length < 6) {
+      const error = new Error("Mật khẩu phải có tối thiểu 6 ký tự");
+      error.status = 400;
+      throw error;
+    }
+    mapped.password_hash = await hash(password, 10);
+  } else if (requirePassword) {
+    const error = new Error("password is required");
+    error.status = 400;
+    throw error;
+  }
+
+  return mapped;
+}
+
+async function blocksLastActiveAdmin(targetUser, patch = {}) {
+  const currentStatus = targetUser?.status || "active";
+  if (targetUser?.role !== "admin" || currentStatus !== "active") return false;
+
+  const nextRole = patch.role ?? targetUser.role;
+  const nextStatus = patch.status ?? currentStatus;
+  if (nextRole === "admin" && nextStatus === "active") return false;
+
+  return (await countActiveAdmins()) <= 1;
 }
 
 function getPlantProfileSortOptions(url) {
@@ -1113,6 +1198,130 @@ async function handleUserPlant(req, res, url, id, action) {
   return false;
 }
 
+async function handleUser(req, res, url, id, currentUser) {
+  if (currentUser.role !== "admin") {
+    sendJson(res, 403, { message: "Không có quyền admin" });
+    return true;
+  }
+
+  if (req.method === "GET" && !id) {
+    const users = await listUsers(getUserSortOptions(url));
+    sendJson(res, 200, users.map(toLegacyUser));
+    return true;
+  }
+
+  if (req.method === "GET" && id) {
+    const user = await findSystemUserById(id);
+    if (!user) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    sendJson(res, 200, toLegacyUser(user));
+    return true;
+  }
+
+  if (req.method === "POST" && !id) {
+    const body = await readBody(req);
+
+    try {
+      const data = await getUserRepositoryData(
+        {
+          ...body,
+          status: body.status || "active",
+        },
+        { requirePassword: true },
+      );
+      const user = await createSystemUser(data);
+      broadcastRealtime("user:change", { action: "create", item: toLegacyUser(user) });
+      sendJson(res, 201, toLegacyUser(user));
+    } catch (error) {
+      if (error.code === "23505") {
+        sendJson(res, 409, { message: "Tên đăng nhập đã tồn tại" });
+        return true;
+      }
+      sendJson(res, error.status || 400, { message: error.message || "Không thể tạo tài khoản" });
+    }
+
+    return true;
+  }
+
+  if (req.method === "PATCH" && id) {
+    const targetUser = await findSystemUserById(id);
+    if (!targetUser) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    const body = await readBody(req);
+
+    try {
+      const data = await getUserRepositoryData(body);
+
+      if (Object.keys(data).length === 0) {
+        sendJson(res, 400, { message: "Không có field hợp lệ để cập nhật" });
+        return true;
+      }
+
+      if (
+        targetUser.id === currentUser.id &&
+        ((hasOwn(data, "role") && data.role !== "admin") ||
+          (hasOwn(data, "status") && data.status !== "active"))
+      ) {
+        sendJson(res, 400, { message: "Không thể tự hạ quyền hoặc khóa tài khoản admin đang dùng" });
+        return true;
+      }
+
+      if (await blocksLastActiveAdmin(targetUser, data)) {
+        sendJson(res, 400, { message: "Không thể thay đổi admin active cuối cùng" });
+        return true;
+      }
+
+      const user = await updateSystemUser(id, data);
+      broadcastRealtime("user:change", { action: "update", item: toLegacyUser(user) });
+      sendJson(res, 200, toLegacyUser(user));
+    } catch (error) {
+      if (error.code === "23505") {
+        sendJson(res, 409, { message: "Tên đăng nhập đã tồn tại" });
+        return true;
+      }
+      sendJson(res, error.status || 400, { message: error.message || "Không thể cập nhật tài khoản" });
+    }
+
+    return true;
+  }
+
+  if (req.method === "DELETE" && id) {
+    const targetUser = await findSystemUserById(id);
+    if (!targetUser) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    if (targetUser.id === currentUser.id) {
+      sendJson(res, 400, { message: "Không thể xóa tài khoản đang đăng nhập" });
+      return true;
+    }
+
+    if (await blocksLastActiveAdmin(targetUser, { status: "disabled" })) {
+      sendJson(res, 400, { message: "Không thể xóa admin active cuối cùng" });
+      return true;
+    }
+
+    const user = await deleteSystemUser(id);
+    broadcastRealtime("user:change", { action: "delete", item: toLegacyUser(user) });
+    sendJson(res, 200, { success: true, item: toLegacyUser(user) });
+    return true;
+  }
+
+  if (req.method === "DELETE" && !id) {
+    sendJson(res, 400, { message: "User id is required" });
+    return true;
+  }
+
+  return false;
+}
+
 function toLegacyThreshold(row) {
   if (!row) return null;
 
@@ -1262,6 +1471,10 @@ export async function handleEntity(req, res, url, parts) {
 
   if (entityName === "UserPlant") {
     return handleUserPlant(req, res, url, id, action);
+  }
+
+  if (entityName === "User") {
+    return handleUser(req, res, url, id, user);
   }
 
   if (entityName === "SensorData") {

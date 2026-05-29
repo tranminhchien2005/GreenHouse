@@ -17,6 +17,7 @@ const invalidationsByEvent = {
   'device_command:update': [['deviceCommandLogs'], ['devices']],
   'automation_rule:change': [['automationRules']],
   'plant:change': [['userPlants'], ['chatbotPlants']],
+  'user:change': [['users']],
 };
 
 function createRealtimeUrl() {

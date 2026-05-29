@@ -1,9 +1,10 @@
 import { query } from "../database.js";
 
-const publicUserColumns = "id, username, role, created_at, updated_at";
+const publicUserColumns = "id, username, role, status, created_at, updated_at";
 const userColumnsWithPasswordHash = `${publicUserColumns}, password_hash`;
 const validRoles = new Set(["admin", "operator", "viewer"]);
-const sortableFields = new Set(["created_at", "updated_at", "username", "role"]);
+const validStatuses = new Set(["pending", "active", "rejected", "disabled"]);
+const sortableFields = new Set(["created_at", "updated_at", "username", "role", "status"]);
 
 function hasOwn(data, key) {
   return Object.prototype.hasOwnProperty.call(data, key);
@@ -37,6 +38,20 @@ function normalizeRole(value, fallback = "operator") {
   }
 
   return role;
+}
+
+function normalizeStatus(value, fallback = "active") {
+  if (value == null || value === "") {
+    if (fallback == null) throw new Error("status is required");
+    return fallback;
+  }
+
+  const status = String(value).trim().toLowerCase();
+  if (!validStatuses.has(status)) {
+    throw new Error("status must be one of: pending, active, rejected, disabled");
+  }
+
+  return status;
 }
 
 function normalizeLimit(value) {
@@ -74,6 +89,10 @@ function getUpdateFields(data = {}) {
     fields.push(["role", normalizeRole(data.role, null)]);
   }
 
+  if (hasOwn(data, "status")) {
+    fields.push(["status", normalizeStatus(data.status, null)]);
+  }
+
   return fields;
 }
 
@@ -90,6 +109,11 @@ export async function listUsers(options = {}) {
   if (options.role) {
     values.push(normalizeRole(options.role, null));
     where.push(`role = $${values.length}`);
+  }
+
+  if (options.status) {
+    values.push(normalizeStatus(options.status, null));
+    where.push(`status = $${values.length}`);
   }
 
   const username = options.username ? String(options.username).trim() : "";
@@ -135,13 +159,14 @@ export async function createUser(data = {}) {
   const username = normalizeUsername(data.username);
   const passwordHash = normalizePasswordHash(data);
   const role = normalizeRole(data.role, "operator");
+  const status = normalizeStatus(data.status, "active");
   const result = await query(
     `
-      INSERT INTO users (username, password_hash, role)
-      VALUES ($1, $2, $3)
+      INSERT INTO users (username, password_hash, role, status)
+      VALUES ($1, $2, $3, $4)
       RETURNING ${publicUserColumns}
     `,
-    [username, passwordHash, role],
+    [username, passwordHash, role, status],
   );
 
   return result.rows[0];
@@ -197,6 +222,27 @@ export async function updateRole(userId, role) {
   return result.rows[0] || null;
 }
 
+export async function updateStatus(userId, status) {
+  const result = await query(
+    `
+      UPDATE users
+      SET status = $2
+      WHERE id = $1
+      RETURNING ${publicUserColumns}
+    `,
+    [userId, normalizeStatus(status, null)],
+  );
+
+  return result.rows[0] || null;
+}
+
+export async function countActiveAdmins() {
+  const result = await query(
+    "SELECT COUNT(*)::integer AS count FROM users WHERE role = 'admin' AND status = 'active'",
+  );
+  return Number(result.rows[0]?.count || 0);
+}
+
 export async function deleteUser(id) {
   const result = await query(`DELETE FROM users WHERE id = $1 RETURNING ${publicUserColumns}`, [id]);
   return result.rows[0] || null;
@@ -206,17 +252,19 @@ export async function upsertUserByUsername(data = {}) {
   const username = normalizeUsername(data.username);
   const passwordHash = normalizePasswordHash(data);
   const role = normalizeRole(data.role, "operator");
+  const status = normalizeStatus(data.status, "active");
   const result = await query(
     `
-      INSERT INTO users (username, password_hash, role)
-      VALUES ($1, $2, $3)
+      INSERT INTO users (username, password_hash, role, status)
+      VALUES ($1, $2, $3, $4)
       ON CONFLICT (username)
       DO UPDATE SET
         password_hash = EXCLUDED.password_hash,
-        role = EXCLUDED.role
+        role = EXCLUDED.role,
+        status = EXCLUDED.status
       RETURNING ${publicUserColumns}
     `,
-    [username, passwordHash, role],
+    [username, passwordHash, role, status],
   );
 
   return result.rows[0];

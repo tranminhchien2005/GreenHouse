@@ -10,6 +10,7 @@ const testUser = {
   username: "test_admin",
   password_hash: "dummy_hash_for_test",
   role: "admin",
+  status: "active",
 };
 
 try {
