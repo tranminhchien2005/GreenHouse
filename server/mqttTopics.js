@@ -20,6 +20,8 @@ export const DEVICE_STATUS_TOPIC = process.env.DEVICE_STATUS_TOPIC || topic("dev
 
 export const SIM800L_SMS_TOPIC = process.env.SIM800L_SMS_TOPIC || topic("alerts/sms");
 
+export const GATEWAY_CONTROL_TOPIC = process.env.GATEWAY_CONTROL_TOPIC || topic("control/gateway");
+
 export const DEVICE_CONTROL_TOPICS = {
   pump: process.env.DEVICE_CONTROL_TOPIC_PUMP || topic("control/pump"),
   fan: process.env.DEVICE_CONTROL_TOPIC_FAN || topic("control/fan"),

@@ -1,4 +1,4 @@
-import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
+import { DEVICE_CONTROL_TOPICS, GATEWAY_CONTROL_TOPIC } from "./mqttTopics.js";
 import { publishMqtt } from "./mqtt.js";
 import { broadcastRealtime } from "./realtime.js";
 import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
@@ -37,6 +37,22 @@ export function toDevicePayload({ deviceId, isOn, source = "manual" }) {
     device: deviceId,
     is_on: isOn,
     action: toDeviceAction(isOn),
+    source,
+  };
+}
+
+export function normalizeUpdateFrequencySeconds(value) {
+  const seconds = Number(value);
+  if (!Number.isInteger(seconds) || seconds <= 0) return null;
+  return seconds;
+}
+
+export function toGatewayUpdateFrequencyPayload({ seconds, source = "manual" }) {
+  return {
+    target: "gateway",
+    command: "set_update_frequency",
+    update_frequency_seconds: seconds,
+    unit: "seconds",
     source,
   };
 }
@@ -119,5 +135,28 @@ export async function executeDeviceCommand({ deviceId, isOn, requestedBy = null,
     payload,
     action: command.action,
     message: `Đã gửi lệnh ${getActionLabel(command.isOn).toLowerCase()} ${getDeviceLabel(command.deviceId)}, đang chờ thiết bị phản hồi.`,
+  };
+}
+
+export async function publishGatewayUpdateFrequency({ seconds, source = "manual" }) {
+  const normalizedSeconds = normalizeUpdateFrequencySeconds(seconds);
+  if (normalizedSeconds == null) {
+    const error = new Error("Tần suất cập nhật phải là số nguyên dương tính bằng giây");
+    error.status = 400;
+    throw error;
+  }
+
+  const payload = toGatewayUpdateFrequencyPayload({
+    seconds: normalizedSeconds,
+    source,
+  });
+
+  await publishMqtt(GATEWAY_CONTROL_TOPIC, payload, { qos: 1 });
+
+  return {
+    topic: GATEWAY_CONTROL_TOPIC,
+    payload,
+    seconds: normalizedSeconds,
+    message: `Đã gửi tần suất cập nhật ${normalizedSeconds} giây xuống Gateway.`,
   };
 }

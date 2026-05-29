@@ -91,7 +91,7 @@ Trách nhiệm phần cứng:
 
 ## MQTT Payload Specification
 
-Các topic mặc định được tạo từ `MQTT_TOPIC_PREFIX` trong `server/mqttTopics.js`. Nếu đặt biến riêng như `SENSOR_DATA_TOPIC`, `DEVICE_STATUS_TOPIC` hoặc `DEVICE_CONTROL_TOPIC_PUMP`, backend sẽ dùng giá trị override đó.
+Các topic mặc định được tạo từ `MQTT_TOPIC_PREFIX` trong `server/mqttTopics.js`. Nếu đặt biến riêng như `SENSOR_DATA_TOPIC`, `DEVICE_STATUS_TOPIC`, `GATEWAY_CONTROL_TOPIC` hoặc `DEVICE_CONTROL_TOPIC_PUMP`, backend sẽ dùng giá trị override đó.
 
 Topic publish/subscribe chính:
 
@@ -103,6 +103,9 @@ Backend publish  -> <MQTT_TOPIC_PREFIX>/control/pump
 Backend publish  -> <MQTT_TOPIC_PREFIX>/control/fan
 Backend publish  -> <MQTT_TOPIC_PREFIX>/control/light
 ESP subscribe    -> <MQTT_TOPIC_PREFIX>/control/<device>
+
+Backend publish  -> <MQTT_TOPIC_PREFIX>/control/gateway
+Gateway subscribe -> <MQTT_TOPIC_PREFIX>/control/gateway
 
 ESP publish      -> <MQTT_TOPIC_PREFIX>/device/status
 Backend subscribe -> <MQTT_TOPIC_PREFIX>/device/status
@@ -136,6 +139,20 @@ Device command payload format backend publish cho ESP:
 ```
 
 Field bắt buộc để ESP xử lý ổn định là `device` và `is_on`. `action` là `turn_on` hoặc `turn_off`; `source` là `manual` hoặc `automation`.
+
+Gateway update frequency payload format backend publish:
+
+```json
+{
+  "target": "gateway",
+  "command": "set_update_frequency",
+  "update_frequency_seconds": 10,
+  "unit": "seconds",
+  "source": "manual"
+}
+```
+
+Gateway nhận thông số này, còn việc Gateway truyền tiếp cấu hình cho các node là phần firmware xử lý.
 
 Device status payload format ESP phải publish lại:
 
@@ -438,6 +455,7 @@ greenhouse/your-project-id/alerts/sms
 greenhouse/your-project-id/control/pump
 greenhouse/your-project-id/control/fan
 greenhouse/your-project-id/control/light
+greenhouse/your-project-id/control/gateway
 greenhouse/your-project-id/device/status
 ```
 

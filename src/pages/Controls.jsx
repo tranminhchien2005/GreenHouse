@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -12,6 +15,7 @@ import {
   Loader2,
   Power,
   RadioTower,
+  SendHorizontal,
   Settings2,
   TriangleAlert,
   Wifi,
@@ -265,9 +269,58 @@ function DeviceControlCard({
   );
 }
 
+function GatewayFrequencyCard({
+  value,
+  isPending,
+  onChange,
+  onSubmit,
+}) {
+  return (
+    <Card className="rounded-lg border bg-card p-5 shadow-sm">
+      <form onSubmit={onSubmit} className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <RadioTower className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-base font-semibold">Gateway</h2>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="gateway-update-frequency">Tần suất cập nhật</Label>
+            <div className="relative w-full sm:w-64">
+              <Input
+                id="gateway-update-frequency"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                disabled={isPending}
+                className="pr-14"
+              />
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm font-medium text-muted-foreground">
+                giây
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <Button type="submit" disabled={isPending} className="w-full gap-2 sm:w-fit">
+          {isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <SendHorizontal className="h-4 w-4" />
+          )}
+          Gửi Gateway
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
 export default function Controls() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const [gatewayFrequencySeconds, setGatewayFrequencySeconds] = useState('10');
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices', 'list'],
@@ -324,6 +377,23 @@ export default function Controls() {
     },
   });
 
+  const gatewayFrequencyMutation = useMutation({
+    mutationFn: (seconds) => deviceService.updateGatewayFrequency(seconds),
+    onSuccess: (_data, seconds) => {
+      toast({
+        title: 'Đã gửi cấu hình Gateway',
+        description: `Tần suất cập nhật: ${seconds} giây.`,
+      });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Gửi cấu hình Gateway thất bại',
+        description: error?.message || 'Không thể gửi tần suất cập nhật xuống Gateway.',
+      });
+    },
+  });
+
   const handleToggleDevice = (device, deviceId, isOn) => {
     if (!device) return;
     if (toggleMutation.isPending && toggleMutation.variables?.device_id === deviceId) return;
@@ -335,6 +405,22 @@ export default function Controls() {
     const deviceId = device.device_id || device.name;
     if (modeMutation.isPending && modeMutation.variables?.device_id === deviceId) return;
     modeMutation.mutate({ id: device.id, device_id: deviceId, mode });
+  };
+
+  const handleGatewayFrequencySubmit = (event) => {
+    event.preventDefault();
+
+    const seconds = Number(gatewayFrequencySeconds);
+    if (!Number.isInteger(seconds) || seconds <= 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Tần suất không hợp lệ',
+        description: 'Vui lòng nhập số nguyên dương, đơn vị giây.',
+      });
+      return;
+    }
+
+    gatewayFrequencyMutation.mutate(seconds);
   };
 
   const configuredDevices = DEVICE_IDS.map((deviceId) => devices.find(d => matchesDeviceId(d, deviceId)));
@@ -379,6 +465,13 @@ export default function Controls() {
           tone="bg-amber-50 text-amber-700"
         />
       </div>
+
+      <GatewayFrequencyCard
+        value={gatewayFrequencySeconds}
+        isPending={gatewayFrequencyMutation.isPending}
+        onChange={setGatewayFrequencySeconds}
+        onSubmit={handleGatewayFrequencySubmit}
+      />
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
         {DEVICE_IDS.map((deviceId, i) => {

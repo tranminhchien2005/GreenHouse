@@ -11,7 +11,11 @@ import {
   isValidAlertThresholdOperator,
   toLegacyAlert,
 } from "./alerts.js";
-import { executeDeviceCommand, normalizeDeviceCommand } from "./deviceControl.js";
+import {
+  executeDeviceCommand,
+  normalizeDeviceCommand,
+  publishGatewayUpdateFrequency,
+} from "./deviceControl.js";
 import {
   evaluateAutomationRuleForSensorData,
   publishAutomationCommand,
@@ -864,6 +868,34 @@ async function handleAutomationRule(req, res, url, id, action) {
 }
 
 async function handleDeviceState(req, res, url, id, action) {
+  if (id === "gateway" && action === "update-frequency" && req.method === "POST") {
+    const body = await readBody(req);
+
+    try {
+      const result = await publishGatewayUpdateFrequency({
+        seconds: body.seconds ??
+          body.update_frequency_seconds ??
+          body.updateFrequencySeconds ??
+          body.interval_seconds ??
+          body.intervalSeconds,
+        source: "manual",
+      });
+
+      sendJson(res, 200, {
+        success: true,
+        message: result.message,
+        topic: result.topic,
+        payload: result.payload,
+      });
+    } catch (error) {
+      sendJson(res, error.status || 500, {
+        message: error.status ? error.message : "Không thể gửi cấu hình Gateway lúc này",
+      });
+    }
+
+    return true;
+  }
+
   if (id && action === "command" && req.method === "POST") {
     const body = await readBody(req);
     const command = normalizeDeviceCommand({
