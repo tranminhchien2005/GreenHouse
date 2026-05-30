@@ -195,7 +195,7 @@ export default function ChatbotWidget() {
                   <SelectValue placeholder="Chọn cây/khu vực" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value={AUTO_PLANT_VALUE}>Tự tìm cây trong câu hỏi</SelectItem>
+                  <SelectItem value={AUTO_PLANT_VALUE}>Các cây đang trồng</SelectItem>
                   {isLoadingPlants && (
                     <SelectItem value="loading-plants" disabled>
                       Đang tải danh sách cây...
