@@ -10,6 +10,7 @@ import { startDeviceStatusMqttListener } from "./deviceStatus.js";
 import { startSensorMqttListener } from "./sensorMqtt.js";
 import { getRouteParts, sendJson, sendNoContent } from "./httpUtils.js";
 import { initRealtime } from "./realtime.js";
+import { checkRateLimit } from "./rateLimit.js";
 import { startCronJobs } from "./cronJobs.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -22,6 +23,12 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") {
       sendNoContent(res);
+      return;
+    }
+
+    const ip = req.socket.remoteAddress || req.headers['x-forwarded-for'] || "unknown";
+    if (checkRateLimit(ip)) {
+      sendJson(res, 429, { message: "Quá nhiều yêu cầu. Vui lòng thử lại sau 1 phút." });
       return;
     }
 
