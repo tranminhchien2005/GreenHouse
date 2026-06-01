@@ -13,6 +13,11 @@ const SENSOR_META = {
 };
 const alertSensorTypes = new Set(Object.keys(SENSOR_META));
 
+const NODE_LABELS = {
+  "node-1": "Khu 1",
+  "node-2": "Khu 2",
+};
+
 const validLevels = new Set(["info", "warning", "danger"]);
 export const ALERT_THRESHOLD_OPERATORS = [">", ">=", "<", "<=", "=="];
 const validOperators = new Set(ALERT_THRESHOLD_OPERATORS);
@@ -61,6 +66,8 @@ export function toLegacyAlert(alert) {
     message: alert.message || "",
     sensor_type: alert.sensor_type ?? alert.sensorType ?? null,
     sensorType: alert.sensor_type ?? alert.sensorType ?? null,
+    node_id: alert.node_id ?? alert.nodeId ?? null,
+    nodeId: alert.node_id ?? alert.nodeId ?? null,
     value: alert.value ?? null,
     is_read: alert.is_read === true,
     isRead: alert.is_read === true,
@@ -77,6 +84,7 @@ export function normalizeAlert(alert, now = new Date().toISOString()) {
     level,
     message: alert.message || "",
     sensor_type: alert.sensor_type ?? alert.sensorType ?? null,
+    node_id: alert.node_id ?? alert.nodeId ?? null,
     value: alert.value ?? null,
     is_read: alert.is_read === true || alert.isRead === true,
     created_at: alert.created_at ?? alert.createdAt ?? alert.created_date ?? now,
@@ -110,6 +118,7 @@ async function loadThresholds() {
       return {
         id: row.id,
         sensor_type: row.sensor_type,
+        node_id: row.node_id ?? null,
         operator,
         value: Number(row.value),
         level: validLevels.has(String(row.level).toLowerCase())
@@ -123,7 +132,7 @@ async function loadThresholds() {
   return thresholdCache;
 }
 
-function buildAlertMessage({ sensor_type, operator, value, threshold, level }) {
+function buildAlertMessage({ sensor_type, operator, value, threshold, level, node_id }) {
   const meta = SENSOR_META[sensor_type] || { label: sensor_type, unit: "" };
   const unit = meta.unit ? ` ${meta.unit}` : "";
   const direction = {
@@ -134,8 +143,9 @@ function buildAlertMessage({ sensor_type, operator, value, threshold, level }) {
     "==": "bằng ngưỡng",
   }[operator];
   const prefix = level === "danger" ? "Nguy hiểm! " : "";
+  const nodeLabel = node_id && NODE_LABELS[node_id] ? `[${NODE_LABELS[node_id]}] ` : "";
 
-  return `${prefix}${meta.label} ${direction}. Giá trị: ${value}${unit}, ngưỡng: ${operator} ${threshold}${unit}`;
+  return `${prefix}${nodeLabel}${meta.label} ${direction}. Giá trị: ${value}${unit}, ngưỡng: ${operator} ${threshold}${unit}`;
 }
 
 function isThresholdTriggered(operator, value, threshold) {
@@ -152,6 +162,7 @@ async function createAlertIfAllowed(alertData, now) {
   const recentAlert = await findRecentSimilarAlert({
     sensor_type: candidate.sensor_type,
     level: candidate.level,
+    node_id: candidate.node_id,
     since: getCooldownSince(now),
   });
 
@@ -181,8 +192,12 @@ export async function evaluateAlertsForLatestReading(now = new Date().toISOStrin
 export async function createAlertsForSensorData(sensorData, now = new Date().toISOString()) {
   const thresholds = await loadThresholds();
   const candidates = [];
+  const dataNodeId = sensorData.node_id ?? sensorData.nodeId ?? null;
 
   for (const threshold of thresholds) {
+    // Skip thresholds that are scoped to a different node
+    if (threshold.node_id && threshold.node_id !== dataNodeId) continue;
+
     const value = toNumber(sensorData[threshold.sensor_type]);
     if (value == null) continue;
     if (!isThresholdTriggered(threshold.operator, value, threshold.value)) continue;
@@ -196,8 +211,10 @@ export async function createAlertsForSensorData(sensorData, now = new Date().toI
         value,
         threshold: threshold.value,
         level: threshold.level,
+        node_id: dataNodeId,
       }),
       sensor_type: threshold.sensor_type,
+      node_id: dataNodeId,
       value,
       is_read: false,
       created_at: now,

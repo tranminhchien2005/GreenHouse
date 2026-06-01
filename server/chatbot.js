@@ -298,13 +298,14 @@ function findSensorBasedDeviceActions(context) {
   const lightMin = getRangeValue(profile.light_range, 0);
   const lightMax = getRangeValue(profile.light_range, 1);
 
-  const pump = getContextDevice(context, "pump_1");
+  const pumpId = context.selected_user_plant?.node_id === 'node-2' ? 'pump_2' : 'pump_1';
+  const pump = getContextDevice(context, pumpId);
   const fan = getContextDevice(context, "fan");
   const light = getContextDevice(context, "led");
 
   if (soilMin != null && sensor.soil_moisture != null && sensor.soil_moisture < soilMin && pump?.is_on !== true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "pump_1",
+      deviceId: pumpId,
       isOn: true,
       reason: `Độ ẩm đất ${sensor.soil_moisture}% thấp hơn ngưỡng ${soilMin}%.`,
     }));
@@ -312,7 +313,7 @@ function findSensorBasedDeviceActions(context) {
 
   if (soilMax != null && sensor.soil_moisture != null && sensor.soil_moisture > soilMax && pump?.is_on === true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "pump_1",
+      deviceId: pumpId,
       isOn: false,
       reason: `Độ ẩm đất ${sensor.soil_moisture}% cao hơn ngưỡng ${soilMax}%.`,
     }));
@@ -375,17 +376,23 @@ function buildDeviceActions(message, context) {
 async function getGreenhouseContext(message, plantId) {
   const alertFrom = new Date(Date.now() - RECENT_ALERT_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
   const selectedUserPlantPromise = plantId ? getUserPlantById(plantId) : findUserPlantByMessage(message);
-  const [latestSensor, devices, alerts, automationRules, activeUserPlants, selectedUserPlantFromRequest, messagePlantProfile] = await Promise.all([
-    getLatestSensorReading(),
-    listDevices(),
-    listAlerts({ limit: 5, from: alertFrom, sortBy: "created_at", sortOrder: "desc" }),
-    listAutomationRules({ limit: 8, sortBy: "created_at", sortOrder: "desc" }),
-    listActiveUserPlants(),
+  const [selectedUserPlantFromRequest, activeUserPlants] = await Promise.all([
     selectedUserPlantPromise,
-    findPlantProfileByMessage(message),
+    listActiveUserPlants(),
   ]);
   const selectedUserPlant = selectedUserPlantFromRequest ||
     (activeUserPlants.length === 1 && isCurrentPlantQuestion(message) ? activeUserPlants[0] : null);
+
+  const nodeIdFilter = selectedUserPlant?.node_id ? { node_id: selectedUserPlant.node_id } : {};
+
+  const [latestSensor, devices, alerts, automationRules, messagePlantProfile] = await Promise.all([
+    getLatestSensorReading(nodeIdFilter),
+    listDevices(),
+    listAlerts({ limit: 5, from: alertFrom, sortBy: "created_at", sortOrder: "desc", ...nodeIdFilter }),
+    listAutomationRules({ limit: 8, sortBy: "created_at", sortOrder: "desc", ...nodeIdFilter }),
+    findPlantProfileByMessage(message),
+  ]);
+
   const plantProfile = selectedUserPlant?.plant_profile || messagePlantProfile;
   const plantProfileStatus = selectedUserPlant?.plant_profile
     ? "matched_from_user_plant"

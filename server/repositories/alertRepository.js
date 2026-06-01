@@ -1,6 +1,6 @@
 import { query } from "../database.js";
 
-const alertColumns = "id, sensor_type, level, message, value, is_read, created_at";
+const alertColumns = "id, sensor_type, node_id, level, message, value, is_read, created_at";
 const sortableFields = new Set(["created_at", "level", "sensor_type", "is_read", "value"]);
 const validLevels = new Set(["info", "warning", "danger"]);
 const DEFAULT_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
@@ -50,6 +50,7 @@ function normalizeLevel(value) {
 function normalizeAlert(data = {}) {
   return {
     sensor_type: data.sensor_type ?? data.sensorType ?? data.type ?? null,
+    node_id: data.node_id ?? data.nodeId ?? null,
     level: normalizeLevel(data.level ?? data.severity),
     message: data.message ?? data.title ?? data.content ?? "",
     value: toNumberOrNull(data.value ?? data.sensor_value ?? data.sensorValue),
@@ -128,6 +129,12 @@ export async function listAlerts(options = {}) {
     where.push(`is_read = $${values.length}`);
   }
 
+  const nodeId = options.node_id ?? options.nodeId;
+  if (nodeId) {
+    values.push(nodeId);
+    where.push(`node_id = $${values.length}`);
+  }
+
   addDateFilters(where, values, options);
 
   values.push(limit);
@@ -157,8 +164,8 @@ export async function getAlertById(id) {
 
 export async function createAlert(data) {
   const alert = normalizeAlert(data);
-  const columns = ["sensor_type", "level", "message", "value", "is_read"];
-  const values = [alert.sensor_type, alert.level, alert.message, alert.value, alert.is_read];
+  const columns = ["sensor_type", "node_id", "level", "message", "value", "is_read"];
+  const values = [alert.sensor_type, alert.node_id, alert.level, alert.message, alert.value, alert.is_read];
 
   if (alert.created_at) {
     columns.push("created_at");
@@ -237,6 +244,17 @@ export async function findRecentSimilarAlert(data = {}) {
   if (!sensorType) return null;
 
   const since = data.since || new Date(Date.now() - DEFAULT_ALERT_COOLDOWN_MS).toISOString();
+  const nodeId = data.node_id ?? data.nodeId ?? null;
+
+  const values = [sensorType, normalizeLevel(data.level), since];
+  let nodeClause;
+  if (nodeId) {
+    values.push(nodeId);
+    nodeClause = `AND node_id = $${values.length}`;
+  } else {
+    nodeClause = "AND node_id IS NULL";
+  }
+
   const result = await query(
     `
       SELECT ${alertColumns}
@@ -244,10 +262,11 @@ export async function findRecentSimilarAlert(data = {}) {
       WHERE sensor_type = $1
         AND level = $2
         AND created_at >= $3
+        ${nodeClause}
       ORDER BY created_at DESC
       LIMIT 1
     `,
-    [sensorType, normalizeLevel(data.level), since],
+    values,
   );
 
   return result.rows[0] || null;

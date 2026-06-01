@@ -16,6 +16,7 @@ import { appClient } from '@/api/appClient';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
 import { cn } from '@/lib/utils';
+import { SENSOR_NODE_LABELS } from '@/config/greenhouse';
 
 const TABS = [
   { key: 'profile', label: 'Hồ sơ' },
@@ -54,6 +55,7 @@ const TOKEN_KEY = 'greenhouse_auth_token';
 const EMPTY_PLANT_FORM = {
   name: '',
   location: '',
+  node_id: '',
   plant_profile_id: '',
   planted_at: '',
   notes: '',
@@ -103,6 +105,7 @@ async function saveUserPlant(data) {
   const payload = {
     name: data.name.trim(),
     location: data.location.trim() || null,
+    node_id: data.node_id || null,
     plant_profile_id: data.plant_profile_id || null,
     planted_at: data.planted_at || null,
     notes: data.notes.trim() || null,
@@ -579,8 +582,13 @@ function UserManagementTab() {
 
 function formatPlantLabel(plant) {
   const profileName = plant?.plant_profile?.name || plant?.plantProfile?.name || plant?.name || 'Cây nhập tay';
-  if (!plant?.location) return profileName;
-  return `${profileName} - ${plant.location}`;
+  const nodeLabel = plant?.node_id ? SENSOR_NODE_LABELS[plant.node_id] : null;
+  const parts = [];
+  if (nodeLabel) parts.push(nodeLabel);
+  if (plant?.location) parts.push(plant.location);
+
+  if (parts.length === 0) return profileName;
+  return `${profileName} - ${parts.join(' - ')}`;
 }
 
 function PlantsTab() {
@@ -662,6 +670,7 @@ function PlantsTab() {
     setForm({
       name: plant.name || '',
       location: plant.location || '',
+      node_id: plant.node_id || plant.nodeId || '',
       plant_profile_id: plant.plant_profile_id || plant.plantProfileId || '',
       planted_at: plant.planted_at ? String(plant.planted_at).slice(0, 10) : '',
       notes: plant.notes || '',
@@ -731,26 +740,45 @@ function PlantsTab() {
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="plant-location">Vị trí</Label>
+              <Label htmlFor="plant-node-id">Khu vực (để chatbot lấy dữ liệu)</Label>
+              <Select
+                value={form.node_id || '__all__'}
+                onValueChange={(value) => setForm((prev) => ({ ...prev, node_id: value === '__all__' ? '' : value }))}
+                disabled={isSaving}
+              >
+                <SelectTrigger id="plant-node-id">
+                  <SelectValue placeholder="Chọn khu vực" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">Không xác định</SelectItem>
+                  {Object.entries(SENSOR_NODE_LABELS).map(([id, label]) => (
+                    <SelectItem key={id} value={id}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="plant-location">Vị trí (mô tả)</Label>
               <Input
                 id="plant-location"
                 value={form.location}
                 onChange={handleChange('location')}
-                placeholder="Luống A"
+                placeholder="Luống A, Góc trái..."
                 disabled={isSaving}
               />
             </div>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="plant-date">Ngày trồng</Label>
-              <Input
-                id="plant-date"
-                type="date"
-                value={form.planted_at}
-                onChange={handleChange('planted_at')}
-                disabled={isSaving}
-              />
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="plant-date">Ngày trồng</Label>
+            <Input
+              id="plant-date"
+              type="date"
+              value={form.planted_at}
+              onChange={handleChange('planted_at')}
+              disabled={isSaving}
+            />
           </div>
 
           <div className="space-y-2">

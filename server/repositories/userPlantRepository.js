@@ -5,6 +5,7 @@ const userPlantSelect = `
   up.plant_profile_id,
   up.name,
   up.location,
+  up.node_id,
   up.planted_at,
   up.notes,
   up.active,
@@ -34,6 +35,7 @@ function toUserPlant(row) {
     plant_profile_id: row.plant_profile_id,
     name: row.name,
     location: row.location,
+    node_id: row.node_id,
     planted_at: row.planted_at,
     notes: row.notes,
     active: row.active,
@@ -120,6 +122,7 @@ function normalizeUserPlant(data = {}) {
     plant_profile_id: normalizePlantProfileId(data),
     name: normalizeTextOrNull(data.name),
     location: normalizeTextOrNull(data.location),
+    node_id: normalizeTextOrNull(data.node_id ?? data.nodeId),
     planted_at: normalizeDateOrNull(data.planted_at ?? data.plantedAt),
     notes: data.notes == null ? null : String(data.notes),
     active: toBooleanOrNull(data.active ?? data.is_active ?? data.isActive) ?? true,
@@ -204,6 +207,7 @@ function getUpdateFields(data = {}) {
   }
   if (hasOwn(data, "name")) fields.push(["name", normalized.name]);
   if (hasOwn(data, "location")) fields.push(["location", normalized.location]);
+  if (hasOwn(data, "node_id") || hasOwn(data, "nodeId")) fields.push(["node_id", normalized.node_id]);
   if (hasOwn(data, "planted_at") || hasOwn(data, "plantedAt")) fields.push(["planted_at", normalized.planted_at]);
   if (hasOwn(data, "notes")) fields.push(["notes", normalized.notes]);
   if (hasOwn(data, "active") || hasOwn(data, "is_active") || hasOwn(data, "isActive")) {
@@ -219,14 +223,15 @@ export async function createUserPlant(data = {}) {
 
   const result = await query(
     `
-      INSERT INTO user_plants (plant_profile_id, name, location, planted_at, notes, active)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO user_plants (plant_profile_id, name, location, node_id, planted_at, notes, active)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       RETURNING id
     `,
     [
       plant.plant_profile_id,
       plant.name,
       plant.location,
+      plant.node_id,
       plant.planted_at,
       plant.notes,
       plant.active,

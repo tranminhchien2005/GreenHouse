@@ -4,6 +4,7 @@ const automationRuleColumns = [
   "id",
   "name",
   "sensor_type",
+  "node_id",
   "operator",
   "threshold",
   "device_id",
@@ -28,10 +29,14 @@ const validActions = new Set(["turn_on", "turn_off"]);
 const validSensorTypes = new Set(["temperature", "humidity", "soil_moisture", "light"]);
 const conditionOperatorMap = {
   above: ">",
+  above_or_equal: ">=",
   below: "<",
+  below_or_equal: "<=",
   equals: "==",
   greater_than: ">",
+  greater_than_or_equal: ">=",
   less_than: "<",
+  less_than_or_equal: "<=",
 };
 
 function hasOwn(data, key) {
@@ -115,10 +120,12 @@ function normalizeAutomationRule(data = {}) {
   const deviceId = normalizeDeviceId(data);
   const deviceName = normalizeDeviceName(data);
   const action = normalizeAction(data.action);
+  const nodeId = data.node_id ?? data.nodeId ?? null;
 
   return {
     name: data.name || `${sensorType || "sensor"} ${operator || "?"} ${threshold ?? "?"} -> ${deviceName || deviceId || "device"}`,
     sensor_type: sensorType,
+    node_id: nodeId,
     operator,
     threshold,
     device_id: deviceId,
@@ -148,6 +155,9 @@ function getUpdateFields(data = {}) {
   if (hasOwn(data, "sensor_type") || hasOwn(data, "sensorType") || hasOwn(data, "sensor")) {
     if (!validSensorTypes.has(normalized.sensor_type)) throw new Error("sensor_type is invalid");
     fields.push(["sensor_type", normalized.sensor_type]);
+  }
+  if (hasOwn(data, "node_id") || hasOwn(data, "nodeId")) {
+    fields.push(["node_id", normalized.node_id]);
   }
   if (hasOwn(data, "operator") || hasOwn(data, "condition")) {
     if (!normalized.operator) throw new Error("operator is invalid");
@@ -217,6 +227,12 @@ export async function listAutomationRules(options = {}) {
     where.push(`device_name = $${values.length}`);
   }
 
+  const nodeId = options.node_id ?? options.nodeId;
+  if (nodeId) {
+    values.push(nodeId);
+    where.push(`node_id = $${values.length}`);
+  }
+
   values.push(limit);
   const limitPlaceholder = `$${values.length}`;
   values.push(offset);
@@ -263,6 +279,7 @@ export async function createAutomationRule(data) {
   const columns = [
     "name",
     "sensor_type",
+    "node_id",
     "operator",
     "threshold",
     "device_id",
@@ -274,6 +291,7 @@ export async function createAutomationRule(data) {
   const values = [
     rule.name,
     rule.sensor_type,
+    rule.node_id,
     rule.operator,
     rule.threshold,
     rule.device_id,
@@ -348,9 +366,10 @@ export async function findDuplicateAutomationRule(data) {
         AND threshold = $3
         AND device_name IS NOT DISTINCT FROM $4
         AND action = $5
+        AND node_id IS NOT DISTINCT FROM $6
       LIMIT 1
     `,
-    [rule.sensor_type, rule.operator, rule.threshold, rule.device_name, rule.action],
+    [rule.sensor_type, rule.operator, rule.threshold, rule.device_name, rule.action, rule.node_id],
   );
 
   return result.rows[0] || null;

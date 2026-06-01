@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,18 +12,18 @@ import { Plus, Zap, Trash2, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { DEVICE_DEFINITIONS, getDeviceLabel } from '@/config/devices';
-import { SENSOR_LABELS } from '@/config/greenhouse';
+import { SENSOR_LABELS, SENSOR_NODE_LABELS } from '@/config/greenhouse';
 import { automationService } from '@/services/automationService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
 
-const conditionLabels = { above: 'Lớn hơn', below: 'Nhỏ hơn', equals: 'Bằng' };
+const conditionLabels = { above: 'Lớn hơn', above_or_equal: 'Lớn hơn hoặc bằng', below: 'Nhỏ hơn', below_or_equal: 'Nhỏ hơn hoặc bằng', equals: 'Bằng' };
 const actionLabels = { turn_on: 'Bật', turn_off: 'Tắt' };
 
 export default function Automation() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true });
+  const [form, setForm] = useState({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true, node_id: '' });
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const canManageRules = user?.role !== 'viewer';
@@ -84,7 +84,19 @@ export default function Automation() {
     },
   });
 
-  const resetForm = () => setForm({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true });
+  const resetForm = () => setForm({ name: '', sensor_type: '', condition: '', threshold: '', target_device: '', action: '', is_active: true, node_id: '' });
+
+  // Filter devices based on selected node_id
+  const availableDevices = useMemo(() => {
+    if (!form.node_id) {
+      // No zone selected = global rule, only show global devices
+      return DEVICE_DEFINITIONS.filter(d => d.scope === 'global');
+    }
+    // Zone selected: show zone-specific devices + global devices
+    return DEVICE_DEFINITIONS.filter(
+      d => d.scope === 'global' || d.node_id === form.node_id
+    );
+  }, [form.node_id]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -96,7 +108,11 @@ export default function Automation() {
       });
       return;
     }
-    createMutation.mutate({ ...form, threshold: Number(form.threshold) });
+    createMutation.mutate({
+      ...form,
+      threshold: Number(form.threshold),
+      node_id: form.node_id || null,
+    });
   };
 
   return (
@@ -142,7 +158,9 @@ export default function Automation() {
                       <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="above">Lớn hơn</SelectItem>
+                        <SelectItem value="above_or_equal">Lớn hơn hoặc bằng</SelectItem>
                         <SelectItem value="below">Nhỏ hơn</SelectItem>
+                        <SelectItem value="below_or_equal">Nhỏ hơn hoặc bằng</SelectItem>
                         <SelectItem value="equals">Bằng</SelectItem>
                       </SelectContent>
                     </Select>
@@ -152,13 +170,36 @@ export default function Automation() {
                   <Label>Ngưỡng giá trị</Label>
                   <Input disabled={createMutation.isPending} type="number" value={form.threshold} onChange={(e) => setForm({ ...form, threshold: e.target.value })} placeholder="VD: 30" />
                 </div>
+                <div>
+                  <Label>Áp dụng cho khu vực</Label>
+                  <Select disabled={createMutation.isPending} value={form.node_id} onValueChange={(v) => {
+                    const nextNodeId = v === '__all__' ? '' : v;
+                    // Reset target_device if it's no longer valid for the new zone
+                    const nextForm = { ...form, node_id: nextNodeId };
+                    if (form.target_device) {
+                      const dev = DEVICE_DEFINITIONS.find(d => d.id === form.target_device);
+                      if (dev && dev.scope === 'zone' && dev.node_id !== nextNodeId) {
+                        nextForm.target_device = '';
+                      }
+                    }
+                    setForm(nextForm);
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">Tất cả (chỉ thiết bị chung)</SelectItem>
+                      {Object.entries(SENSOR_NODE_LABELS).map(([id, label]) => (
+                        <SelectItem key={id} value={id}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label>Thiết bị</Label>
                     <Select disabled={createMutation.isPending} value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
                       <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                       <SelectContent>
-                        {DEVICE_DEFINITIONS.map((device) => (
+                        {availableDevices.map((device) => (
                           <SelectItem key={device.id} value={device.id}>{device.name}</SelectItem>
                         ))}
                       </SelectContent>
@@ -217,6 +258,17 @@ export default function Automation() {
                     <div className="flex-1">
                       <h3 className="font-semibold">{rule.name}</h3>
                       <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground flex-wrap">
+                        {(() => {
+                          const ruleNodeId = rule.node_id ?? rule.nodeId;
+                          const nodeLabel = ruleNodeId ? SENSOR_NODE_LABELS[ruleNodeId] : null;
+                          return nodeLabel ? (
+                            <Badge variant="outline" className="text-[10px] border-primary/30 bg-primary/5 text-primary">
+                              {nodeLabel}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px]">Tất cả</Badge>
+                          );
+                        })()}
                         <span className="px-2 py-0.5 bg-muted rounded-md">{SENSOR_LABELS[rule.sensor_type]}</span>
                         <span>{conditionLabels[rule.condition]}</span>
                         <span className="font-semibold text-foreground">{rule.threshold}</span>

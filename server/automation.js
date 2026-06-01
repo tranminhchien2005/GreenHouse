@@ -1,4 +1,5 @@
 import { toDeviceMqttPayload } from "./config/devices.js";
+import { getDeviceDefinition } from "./config/devices.js";
 import { publishMqtt } from "./mqtt.js";
 import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
 import { broadcastRealtime } from "./realtime.js";
@@ -10,7 +11,9 @@ export const AUTOMATION_COOLDOWN_MS = Number(process.env.AUTOMATION_COOLDOWN_MS 
 
 const conditionOperators = {
   above: ">",
+  above_or_equal: ">=",
   below: "<",
+  below_or_equal: "<=",
   equals: "==",
 };
 const validOperators = new Set([">", ">=", "<", "<=", "=="]);
@@ -124,6 +127,8 @@ export async function evaluateAutomationRuleForSensorData(rule, sensorData, opti
   const prioritizeDeviceMode = options.prioritizeDeviceMode === true;
   const triggeredDeviceNames = options.triggeredDeviceNames || new Set();
   const targetDevice = getTargetDevice(rule);
+  const dataNodeId = sensorData?.node_id ?? sensorData?.nodeId ?? null;
+  const ruleNodeId = rule?.node_id ?? rule?.nodeId ?? null;
   const condition = evaluateRuleCondition(sensorData?.[rule?.sensor_type], rule, rule?.threshold);
   const result = {
     ruleId: rule?.id ?? null,
@@ -142,6 +147,21 @@ export async function evaluateAutomationRuleForSensorData(rule, sensorData, opti
 
   if (!condition.matched) {
     return result;
+  }
+
+  // Check node_id match: rule scoped to a specific node only triggers for that node's data
+  if (ruleNodeId && ruleNodeId !== dataNodeId) {
+    result.skippedReason = "node_mismatch";
+    return result;
+  }
+
+  // For zone-scoped devices, verify the target device belongs to the sensor's node
+  if (targetDevice) {
+    const deviceDef = getDeviceDefinition(targetDevice);
+    if (deviceDef && deviceDef.scope === "zone" && dataNodeId && deviceDef.node_id !== dataNodeId) {
+      result.skippedReason = "device_node_mismatch";
+      return result;
+    }
   }
 
   if (!isRuleActive(rule)) {

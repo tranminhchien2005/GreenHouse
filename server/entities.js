@@ -197,6 +197,7 @@ function getSensorSortOptions(url) {
 function toAlertRepositoryData(data = {}) {
   const mapped = {
     sensor_type: data.sensor_type ?? data.sensorType ?? data.type,
+    node_id: data.node_id ?? data.nodeId,
     level: data.level ?? data.severity,
     message: data.message ?? data.title ?? data.content,
     value: data.value ?? data.sensor_value ?? data.sensorValue,
@@ -232,6 +233,7 @@ function getAlertSortOptions(url) {
     level: url.searchParams.get("level"),
     sensor_type: url.searchParams.get("sensor_type") ?? url.searchParams.get("sensorType"),
     is_read: url.searchParams.get("is_read") ?? url.searchParams.get("isRead"),
+    node_id: url.searchParams.get("node_id") ?? url.searchParams.get("nodeId"),
     from: url.searchParams.get("from"),
     to: url.searchParams.get("to"),
     sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
@@ -243,8 +245,8 @@ function getConditionFromOperator(operator) {
   if (operator === ">") return "above";
   if (operator === "<") return "below";
   if (operator === "==") return "equals";
-  if (operator === ">=") return "greater_than_or_equal";
-  if (operator === "<=") return "less_than_or_equal";
+  if (operator === ">=") return "above_or_equal";
+  if (operator === "<=") return "below_or_equal";
   return operator || null;
 }
 
@@ -256,6 +258,8 @@ function toLegacyAutomationRule(rule) {
     name: rule.name,
     sensor_type: rule.sensor_type,
     sensorType: rule.sensor_type,
+    node_id: rule.node_id ?? null,
+    nodeId: rule.node_id ?? null,
     operator: rule.operator,
     condition: getConditionFromOperator(rule.operator),
     threshold: rule.threshold,
@@ -283,6 +287,7 @@ function toAutomationRepositoryData(data = {}) {
   const mapped = {
     name: data.name,
     sensor_type: data.sensor_type ?? data.sensorType ?? data.sensor,
+    node_id: data.node_id ?? data.nodeId,
     operator: data.operator,
     condition: data.condition,
     threshold: data.threshold,
@@ -327,6 +332,7 @@ function getAutomationSortOptions(url) {
     sensor_type: url.searchParams.get("sensor_type") ?? url.searchParams.get("sensorType") ?? url.searchParams.get("sensor"),
     device_name: url.searchParams.get("device_name") ?? url.searchParams.get("deviceName") ??
       url.searchParams.get("target_device") ?? url.searchParams.get("targetDevice"),
+    node_id: url.searchParams.get("node_id") ?? url.searchParams.get("nodeId"),
     sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
     sortOrder: isDesc ? "desc" : sortOrderParam,
   };
@@ -512,6 +518,8 @@ function toLegacyUserPlant(plant) {
     plantProfileId: plant.plant_profile_id,
     name: plant.name,
     location: plant.location,
+    node_id: plant.node_id,
+    nodeId: plant.node_id,
     planted_at: plant.planted_at,
     plantedAt: plant.planted_at,
     notes: plant.notes,
@@ -1347,6 +1355,8 @@ function toLegacyThreshold(row) {
   return {
     id: row.id,
     sensor_type: row.sensor_type,
+    node_id: row.node_id ?? null,
+    nodeId: row.node_id ?? null,
     operator: row.operator,
     value: row.value == null ? null : Number(row.value),
     level: row.level,
@@ -1362,6 +1372,63 @@ async function handleAlertThreshold(req, res, id) {
       "SELECT * FROM alert_thresholds ORDER BY sensor_type, level",
     );
     sendJson(res, 200, result.rows.map(toLegacyThreshold));
+    return true;
+  }
+
+  if (req.method === "POST" && !id) {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    if (user.role !== "admin") {
+      sendJson(res, 403, { message: "Không có quyền" });
+      return true;
+    }
+
+    const body = await readBody(req);
+
+    const validSensorTypes = new Set(["temperature", "humidity", "soil_moisture", "light"]);
+    const sensorType = String(body.sensor_type || "").trim();
+    if (!validSensorTypes.has(sensorType)) {
+      sendJson(res, 400, { message: "sensor_type không hợp lệ. Giá trị hợp lệ: temperature, humidity, soil_moisture, light" });
+      return true;
+    }
+
+    const operator = String(body.operator || "").trim();
+    if (!isValidAlertThresholdOperator(operator)) {
+      sendJson(res, 400, {
+        message: getAlertThresholdOperatorErrorMessage(body.operator),
+        allowed_operators: ALERT_THRESHOLD_OPERATORS,
+      });
+      return true;
+    }
+
+    const value = Number(body.value);
+    if (!Number.isFinite(value)) {
+      sendJson(res, 400, { message: "value phải là số" });
+      return true;
+    }
+
+    const validLevels = new Set(["info", "warning", "danger"]);
+    const level = String(body.level || "warning").trim().toLowerCase();
+    if (!validLevels.has(level)) {
+      sendJson(res, 400, { message: "level không hợp lệ. Giá trị hợp lệ: info, warning, danger" });
+      return true;
+    }
+
+    const nodeId = body.node_id ?? body.nodeId ?? null;
+
+    const result = await pool.query(
+      `INSERT INTO alert_thresholds (sensor_type, operator, value, level, node_id, active)
+       VALUES ($1, $2, $3, $4, $5, true)
+       RETURNING *`,
+      [sensorType, operator, value, level, nodeId],
+    );
+
+    invalidateThresholdCache();
+
+    const item = toLegacyThreshold(result.rows[0]);
+    broadcastRealtime("alert_threshold:create", { item });
+    sendJson(res, 201, item);
     return true;
   }
 
@@ -1410,6 +1477,12 @@ async function handleAlertThreshold(req, res, id) {
       fields.push(`active = $${values.length}`);
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "node_id") || Object.prototype.hasOwnProperty.call(body, "nodeId")) {
+      const nodeId = body.node_id ?? body.nodeId ?? null;
+      values.push(nodeId);
+      fields.push(`node_id = $${values.length}`);
+    }
+
     if (fields.length === 0) {
       sendJson(res, 400, { message: "Không có field hợp lệ để cập nhật" });
       return true;
@@ -1452,6 +1525,32 @@ async function handleAlertThreshold(req, res, id) {
       alerts_created: createdAlerts.length,
       alerts: createdAlerts,
     });
+    return true;
+  }
+
+  if (req.method === "DELETE" && id) {
+    const user = await requireUser(req, res);
+    if (!user) return true;
+
+    if (user.role !== "admin") {
+      sendJson(res, 403, { message: "Không có quyền" });
+      return true;
+    }
+
+    const result = await pool.query(
+      "DELETE FROM alert_thresholds WHERE id = $1 RETURNING *",
+      [id],
+    );
+
+    if (result.rowCount === 0) {
+      sendJson(res, 404, { message: "Item not found" });
+      return true;
+    }
+
+    invalidateThresholdCache();
+
+    broadcastRealtime("alert_threshold:delete", { item: toLegacyThreshold(result.rows[0]) });
+    sendJson(res, 200, { success: true, item: toLegacyThreshold(result.rows[0]) });
     return true;
   }
 

@@ -13,6 +13,9 @@ export const alertService = {
   markRead(id) {
     return appClient.entities.Alert.update(id, { is_read: true });
   },
+  delete(id) {
+    return appClient.entities.Alert.delete(id);
+  },
   markAllRead() {
     return appClient.alerts.markAllRead();
   },

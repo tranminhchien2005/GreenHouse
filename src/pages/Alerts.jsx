@@ -3,11 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AlertTriangle, AlertCircle, Info, CheckCircle2, Bell } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Info, CheckCircle2, Bell, Trash2 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SENSOR_LABELS } from '@/config/greenhouse';
+import { SENSOR_LABELS, SENSOR_NODE_LABELS } from '@/config/greenhouse';
 import { alertService } from '@/services/alertService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
@@ -26,6 +27,7 @@ export default function Alerts() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [activeSegment, setActiveSegment] = useState('alerts');
+  const [nodeFilter, setNodeFilter] = useState('all');
   const showThresholds = isAdmin && activeSegment === 'thresholds';
 
   const { data: alerts = [] } = useQuery({
@@ -38,6 +40,21 @@ export default function Alerts() {
   const markReadMutation = useMutation({
     mutationFn: (id) => alertService.markRead(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['alerts'] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => alertService.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+      toast({ title: 'Đã xóa cảnh báo' });
+    },
+    onError: (error) => {
+      toast({
+        variant: 'destructive',
+        title: 'Xóa thất bại',
+        description: error?.message || 'Có lỗi xảy ra',
+      });
+    },
   });
 
   const markAllReadMutation = useMutation({
@@ -58,7 +75,10 @@ export default function Alerts() {
     },
   });
 
-  const unreadCount = alerts.filter(a => !a.is_read).length;
+  const filteredAlerts = nodeFilter === 'all'
+    ? alerts
+    : alerts.filter(a => (a.node_id ?? a.nodeId) === nodeFilter);
+  const unreadCount = filteredAlerts.filter(a => !a.is_read).length;
 
   return (
     <div className="space-y-6">
@@ -78,32 +98,51 @@ export default function Alerts() {
             <AlertsSegment value={activeSegment} onChange={setActiveSegment} />
           )}
         </div>
-        {!showThresholds && unreadCount > 0 && (
-          <Button
-            variant="outline"
-            onClick={() => markAllReadMutation.mutate()}
-            disabled={markAllReadMutation.isPending}
-            className="gap-2 shrink-0"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            {markAllReadMutation.isPending ? 'Đang cập nhật...' : 'Đánh dấu tất cả đã đọc'}
-          </Button>
+        {!showThresholds && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Select value={nodeFilter} onValueChange={setNodeFilter}>
+              <SelectTrigger className="h-9 w-[130px]">
+                <SelectValue placeholder="Tất cả khu" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả khu</SelectItem>
+                {Object.entries(SENSOR_NODE_LABELS).map(([id, label]) => (
+                  <SelectItem key={id} value={id}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {unreadCount > 0 && (
+              <Button
+                variant="outline"
+                onClick={() => markAllReadMutation.mutate()}
+                disabled={markAllReadMutation.isPending}
+                className="gap-2"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                {markAllReadMutation.isPending ? 'Đang cập nhật...' : 'Đánh dấu tất cả đã đọc'}
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
       {showThresholds ? (
         <AlertThresholdsPanel />
-      ) : alerts.length === 0 ? (
+      ) : filteredAlerts.length === 0 ? (
         <Card className="p-12 border-0 shadow-sm text-center">
           <Bell className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
-          <p className="text-muted-foreground">Không có cảnh báo nào</p>
+          <p className="text-muted-foreground">
+            {nodeFilter !== 'all' ? `Không có cảnh báo nào cho ${SENSOR_NODE_LABELS[nodeFilter] || nodeFilter}` : 'Không có cảnh báo nào'}
+          </p>
         </Card>
       ) : (
         <div className="space-y-3">
           <AnimatePresence>
-            {alerts.map((alert, i) => {
+            {filteredAlerts.map((alert, i) => {
               const config = typeConfig[alert.type] || typeConfig.info;
               const Icon = config.icon;
+              const alertNodeId = alert.node_id ?? alert.nodeId;
+              const nodeLabel = alertNodeId ? SENSOR_NODE_LABELS[alertNodeId] : null;
               return (
                 <motion.div
                   key={alert.id}
@@ -112,8 +151,9 @@ export default function Alerts() {
                   transition={{ delay: i * 0.03 }}
                 >
                   <Card className={cn(
-                    "p-5 border-0 shadow-sm transition-all",
-                    !alert.is_read && "ring-1 ring-primary/20 bg-primary/[0.02]"
+                    "p-5 border-0 shadow-sm transition-all group",
+                    !alert.is_read && "ring-1 ring-primary/20 bg-primary/[0.02]",
+                    deleteMutation.isPending && deleteMutation.variables === alert.id && "opacity-50"
                   )}>
                     <div className="flex items-start gap-4">
                       <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0", config.bg)}>
@@ -123,12 +163,34 @@ export default function Alerts() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge className={cn("text-[10px]", config.badge)}>{config.label}</Badge>
                           <Badge variant="outline" className="text-[10px]">{SENSOR_LABELS[alert.sensor_type]}</Badge>
+                          {nodeLabel && (
+                            <Badge variant="outline" className="text-[10px] border-primary/30 bg-primary/5 text-primary">
+                              {nodeLabel}
+                            </Badge>
+                          )}
                           {!alert.is_read && <div className="w-2 h-2 rounded-full bg-primary" />}
                         </div>
                         <p className="font-medium mt-2">{alert.message}</p>
-                        <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
-                          <span>Giá trị: <span className="font-semibold text-foreground">{alert.value}</span></span>
-                          <span>{alert.created_date ? format(new Date(alert.created_date), 'dd/MM/yyyy HH:mm:ss') : ''}</span>
+                        <div className="flex items-center justify-between mt-2">
+                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                            <span>Giá trị: <span className="font-semibold text-foreground">{alert.value}</span></span>
+                            <span>{alert.created_date ? format(new Date(alert.created_date), 'dd/MM/yyyy HH:mm:ss') : ''}</span>
+                          </div>
+                          {isAdmin && (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-6 w-6 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                              disabled={deleteMutation.isPending}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteMutation.mutate(alert.id);
+                              }}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                       {!alert.is_read && (
