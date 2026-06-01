@@ -10,6 +10,7 @@ import { startDeviceStatusMqttListener } from "./deviceStatus.js";
 import { startSensorMqttListener } from "./sensorMqtt.js";
 import { getRouteParts, sendJson, sendNoContent } from "./httpUtils.js";
 import { initRealtime } from "./realtime.js";
+import { startCronJobs } from "./cronJobs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,6 +88,7 @@ try {
 startDeviceStatusMqttListener();
 startSensorMqttListener();
 initRealtime(server);
+startCronJobs();
 
 server.on("error", (err) => {
   if (err.code === "EADDRINUSE") {

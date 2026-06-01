@@ -245,3 +245,11 @@ export async function getDailyStats(options = {}) {
 
   return result.rows;
 }
+
+export async function deleteOldSensorData(days = 30) {
+  const result = await query(
+    `DELETE FROM sensor_readings WHERE created_at < NOW() - INTERVAL '1 day' * $1 RETURNING id`,
+    [days]
+  );
+  return result.rowCount;
+}
