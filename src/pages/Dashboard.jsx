@@ -1,16 +1,23 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Thermometer, Droplets, CloudRain, Sun } from 'lucide-react';
 import SensorCard from '@/components/dashboard/SensorCard';
 import DeviceStatusBar from '@/components/dashboard/DeviceStatusBar';
 import RecentAlerts from '@/components/dashboard/RecentAlerts';
 import MiniChart from '@/components/dashboard/MiniChart';
+import CompareMiniChart from '@/components/dashboard/CompareMiniChart';
 import ActivityLog from '@/components/dashboard/ActivityLog';
-import { getSensorWarning } from '@/services/alertRules';
-import { SENSOR_LABELS } from '@/config/greenhouse';
+import NodeSelector from '@/components/dashboard/NodeSelector';
 import { appClient } from '@/api/appClient';
 import { alertService } from '@/services/alertService';
 import { deviceService } from '@/services/deviceService';
+import { getSensorWarning } from '@/services/alertRules';
+import {
+  DASHBOARD_VIEW_ALL,
+  EXPECTED_SENSOR_NODES,
+  mergeLatestByExpectedNodes,
+  SENSOR_LABELS,
+} from '@/config/greenhouse';
 import { sensorService } from '@/services/sensorService';
 
 const sensorCards = [
@@ -27,19 +34,60 @@ const miniCharts = [
 ];
 
 export default function Dashboard() {
-  const { data: latestSensorData = [] } = useQuery({
-    queryKey: ['sensorData', 'latest', 1],
-    queryFn: () => sensorService.listLatest(1),
+  const [viewMode, setViewMode] = useState(EXPECTED_SENSOR_NODES[0]);
+  const isCompareView = viewMode === DASHBOARD_VIEW_ALL;
+
+  const { data: latestByNode = [] } = useQuery({
+    queryKey: ['sensorData', 'latest-by-node'],
+    queryFn: () => sensorService.listLatestByNode(),
     refetchOnMount: 'always',
     refetchInterval: 3000,
   });
 
+  const nodesById = useMemo(() => {
+    const map = new Map();
+    for (const row of mergeLatestByExpectedNodes(latestByNode)) {
+      map.set(row.node_id ?? row.nodeId, row);
+    }
+    return map;
+  }, [latestByNode]);
+
+  const latest = useMemo(() => {
+    if (isCompareView) return {};
+    return nodesById.get(viewMode) ?? { node_id: viewMode };
+  }, [isCompareView, nodesById, viewMode]);
+
   const { data: sensorHistory = [] } = useQuery({
-    queryKey: ['sensorData', 'history', 50],
-    queryFn: () => sensorService.listLatest(50),
+    queryKey: ['sensorData', 'history', 50, viewMode],
+    queryFn: () => sensorService.listHistory({ limit: 50, nodeId: viewMode }),
+    enabled: !isCompareView,
     refetchOnMount: 'always',
     refetchInterval: 5000,
   });
+
+  const { data: historyNode1 = [] } = useQuery({
+    queryKey: ['sensorData', 'history', 50, 'node-1'],
+    queryFn: () => sensorService.listHistory({ limit: 50, nodeId: 'node-1' }),
+    enabled: isCompareView,
+    refetchOnMount: 'always',
+    refetchInterval: 5000,
+  });
+
+  const { data: historyNode2 = [] } = useQuery({
+    queryKey: ['sensorData', 'history', 50, 'node-2'],
+    queryFn: () => sensorService.listHistory({ limit: 50, nodeId: 'node-2' }),
+    enabled: isCompareView,
+    refetchOnMount: 'always',
+    refetchInterval: 5000,
+  });
+
+  const historiesByNode = useMemo(
+    () => ({
+      'node-1': historyNode1,
+      'node-2': historyNode2,
+    }),
+    [historyNode1, historyNode2],
+  );
 
   const { data: devices = [] } = useQuery({
     queryKey: ['devices', 'list'],
@@ -69,45 +117,55 @@ export default function Dashboard() {
     refetchInterval: 3000,
   });
 
-  const latest = latestSensorData[0] || {};
-
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">Tổng quan nhà kính</h1>
-        <p className="text-muted-foreground text-sm mt-1">Giám sát dữ liệu môi trường từ backend</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Tổng quan nhà kính</h1>
+          <p className="text-muted-foreground text-sm mt-1">Giám sát dữ liệu môi trường từ backend</p>
+        </div>
+        <NodeSelector value={viewMode} onChange={setViewMode} />
       </div>
 
-      {/* Sensor Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {sensorCards.map((sensor) => (
-          <SensorCard
-            key={sensor.type}
-            icon={sensor.icon}
-            label={sensor.label}
-            value={latest[sensor.type]}
-            unit={sensor.unit}
-            color={sensor.color}
-            warning={getSensorWarning(sensor.type, latest[sensor.type], alertThresholds)}
-          />
-        ))}
-      </div>
+      {!isCompareView ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {sensorCards.map((sensor) => (
+            <SensorCard
+              key={sensor.type}
+              icon={sensor.icon}
+              label={sensor.label}
+              value={latest[sensor.type]}
+              unit={sensor.unit}
+              color={sensor.color}
+              warning={getSensorWarning(sensor.type, latest[sensor.type], alertThresholds)}
+            />
+          ))}
+        </div>
+      ) : null}
 
-      {/* Device Status */}
-      <DeviceStatusBar devices={devices} />
+      <DeviceStatusBar devices={devices} selectedNodeView={viewMode} />
 
-      {/* Charts Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {miniCharts.map((chart) => (
-          <MiniChart
-            key={chart.dataKey}
-            data={sensorHistory}
-            title={chart.title}
-            dataKey={chart.dataKey}
-            color={chart.color}
-            unit={chart.unit}
-          />
-        ))}
+        {isCompareView
+          ? miniCharts.map((chart) => (
+              <CompareMiniChart
+                key={chart.dataKey}
+                historiesByNode={historiesByNode}
+                title={chart.title}
+                dataKey={chart.dataKey}
+                unit={chart.unit}
+              />
+            ))
+          : miniCharts.map((chart) => (
+              <MiniChart
+                key={chart.dataKey}
+                data={sensorHistory}
+                title={chart.title}
+                dataKey={chart.dataKey}
+                color={chart.color}
+                unit={chart.unit}
+              />
+            ))}
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">

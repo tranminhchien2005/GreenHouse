@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,6 +10,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { SENSOR_LABELS } from '@/config/greenhouse';
 import { alertService } from '@/services/alertService';
 import { useToast } from '@/components/ui/use-toast';
+import { useAuth } from '@/lib/AuthContext';
+import AlertsSegment from '@/components/alerts/AlertsSegment';
+import AlertThresholdsPanel from '@/components/alerts/AlertThresholdsPanel';
 
 const typeConfig = {
   danger: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-50', badge: 'bg-red-100 text-red-700', label: 'Nguy hiểm' },
@@ -20,6 +23,10 @@ const typeConfig = {
 export default function Alerts() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const [activeSegment, setActiveSegment] = useState('alerts');
+  const showThresholds = isAdmin && activeSegment === 'thresholds';
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['alerts', 'list'],
@@ -55,19 +62,28 @@ export default function Alerts() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Cảnh báo</h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            {unreadCount > 0 ? `${unreadCount} cảnh báo chưa đọc` : 'Tất cả cảnh báo đã được đọc'}
-          </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="space-y-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Cảnh báo</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {showThresholds
+                ? 'Cấu hình ngưỡng kích hoạt cảnh báo theo từng cảm biến'
+                : unreadCount > 0
+                  ? `${unreadCount} cảnh báo chưa đọc`
+                  : 'Tất cả cảnh báo đã được đọc'}
+            </p>
+          </div>
+          {isAdmin && (
+            <AlertsSegment value={activeSegment} onChange={setActiveSegment} />
+          )}
         </div>
-        {unreadCount > 0 && (
+        {!showThresholds && unreadCount > 0 && (
           <Button
             variant="outline"
             onClick={() => markAllReadMutation.mutate()}
             disabled={markAllReadMutation.isPending}
-            className="gap-2"
+            className="gap-2 shrink-0"
           >
             <CheckCircle2 className="w-4 h-4" />
             {markAllReadMutation.isPending ? 'Đang cập nhật...' : 'Đánh dấu tất cả đã đọc'}
@@ -75,7 +91,9 @@ export default function Alerts() {
         )}
       </div>
 
-      {alerts.length === 0 ? (
+      {showThresholds ? (
+        <AlertThresholdsPanel />
+      ) : alerts.length === 0 ? (
         <Card className="p-12 border-0 shadow-sm text-center">
           <Bell className="w-12 h-12 mx-auto text-muted-foreground/30 mb-3" />
           <p className="text-muted-foreground">Không có cảnh báo nào</p>

@@ -23,7 +23,10 @@ export const SIM800L_SMS_TOPIC = process.env.SIM800L_SMS_TOPIC || topic("alerts/
 export const GATEWAY_CONTROL_TOPIC = process.env.GATEWAY_CONTROL_TOPIC || topic("control/gateway");
 
 export const DEVICE_CONTROL_TOPICS = {
-  pump: process.env.DEVICE_CONTROL_TOPIC_PUMP || topic("control/pump"),
+  pump_1: process.env.DEVICE_CONTROL_TOPIC_PUMP_1 || topic("control/pump_1"),
+  mist_1: process.env.DEVICE_CONTROL_TOPIC_MIST_1 || topic("control/mist_1"),
+  pump_2: process.env.DEVICE_CONTROL_TOPIC_PUMP_2 || topic("control/pump_2"),
+  mist_2: process.env.DEVICE_CONTROL_TOPIC_MIST_2 || topic("control/mist_2"),
   fan: process.env.DEVICE_CONTROL_TOPIC_FAN || topic("control/fan"),
-  light: process.env.DEVICE_CONTROL_TOPIC_LIGHT || topic("control/light"),
+  led: process.env.DEVICE_CONTROL_TOPIC_LED || process.env.DEVICE_CONTROL_TOPIC_LIGHT || topic("control/led"),
 };

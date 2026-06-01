@@ -130,6 +130,9 @@ export const appClient = {
       const queryString = query.toString();
       return request(`/api/SensorData/stats/daily${queryString ? `?${queryString}` : ""}`);
     },
+    latestByNode() {
+      return request("/api/SensorData/latest-by-node");
+    },
   },
   alerts: {
     async markAllRead() {

@@ -12,6 +12,7 @@ function toNumberOrNull(value) {
 
 export function toSensorRepositoryData(data = {}) {
   const mapped = {
+    node_id: data.node_id ?? data.nodeId,
     temperature: data.temperature ?? data.temp,
     humidity: data.humidity,
     soil_moisture: data.soil_moisture ?? data.soilMoisture ?? data.soil,
@@ -40,6 +41,8 @@ export function toLegacySensorData(reading) {
 
   return {
     id: reading.id,
+    node_id: reading.node_id,
+    nodeId: reading.node_id,
     temperature: reading.temperature,
     humidity: reading.humidity,
     soil_moisture: reading.soil_moisture,

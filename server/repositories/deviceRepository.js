@@ -1,3 +1,4 @@
+import { mergeDevicesWithDefinitions } from "../config/devices.js";
 import { query } from "../database.js";
 
 const validModes = new Set(["manual", "auto"]);
@@ -31,6 +32,16 @@ function normalizeLastSeenAt(data = {}) {
   return null;
 }
 
+function normalizeScope(value, fallback = "global") {
+  const scope = String(value || fallback).trim();
+  return scope === "zone" ? "zone" : "global";
+}
+
+function normalizeNodeId(value) {
+  if (value == null || value === "") return null;
+  return String(value).trim() || null;
+}
+
 function normalizeDeviceForCreate(data = {}) {
   const name = normalizeName(data);
   if (!name) throw new Error("Device name is required");
@@ -38,6 +49,8 @@ function normalizeDeviceForCreate(data = {}) {
   return {
     name,
     type: normalizeType(data, name) || name,
+    scope: normalizeScope(data.scope),
+    node_id: normalizeNodeId(data.node_id ?? data.nodeId),
     is_on: normalizeBoolean(data.is_on, false),
     mode: normalizeMode(data.mode, "manual"),
     online: normalizeBoolean(data.online, false),
@@ -55,6 +68,10 @@ function getUpdateFields(data = {}, { allowName = false } = {}) {
   }
 
   if (hasOwn(data, "type")) fields.push(["type", normalizeType(data)]);
+  if (hasOwn(data, "scope")) fields.push(["scope", normalizeScope(data.scope)]);
+  if (hasOwn(data, "node_id") || hasOwn(data, "nodeId")) {
+    fields.push(["node_id", normalizeNodeId(data.node_id ?? data.nodeId)]);
+  }
   if (hasOwn(data, "is_on")) fields.push(["is_on", normalizeBoolean(data.is_on)]);
   if (hasOwn(data, "mode")) fields.push(["mode", normalizeMode(data.mode)]);
   if (hasOwn(data, "online")) fields.push(["online", normalizeBoolean(data.online)]);
@@ -93,6 +110,11 @@ export async function listDevices() {
   return result.rows;
 }
 
+export async function listConfiguredDevices() {
+  const rows = await listDevices();
+  return mergeDevicesWithDefinitions(rows);
+}
+
 export async function getDeviceById(id) {
   const result = await query("SELECT * FROM devices WHERE id = $1", [id]);
   return result.rows[0] || null;
@@ -107,11 +129,20 @@ export async function createDevice(data) {
   const device = normalizeDeviceForCreate(data);
   const result = await query(
     `
-      INSERT INTO devices (name, type, is_on, mode, online, last_seen_at)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO devices (name, type, scope, node_id, is_on, mode, online, last_seen_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING *
     `,
-    [device.name, device.type, device.is_on, device.mode, device.online, device.last_seen_at],
+    [
+      device.name,
+      device.type,
+      device.scope,
+      device.node_id,
+      device.is_on,
+      device.mode,
+      device.online,
+      device.last_seen_at,
+    ],
   );
 
   return result.rows[0];
@@ -134,12 +165,21 @@ export async function upsertDeviceByName(data) {
 
   const result = await query(
     `
-      INSERT INTO devices (name, type, is_on, mode, online, last_seen_at)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO devices (name, type, scope, node_id, is_on, mode, online, last_seen_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       ON CONFLICT (name) ${updateClause}
       RETURNING *
     `,
-    [device.name, device.type, device.is_on, device.mode, device.online, device.last_seen_at],
+    [
+      device.name,
+      device.type,
+      device.scope,
+      device.node_id,
+      device.is_on,
+      device.mode,
+      device.online,
+      device.last_seen_at,
+    ],
   );
 
   return result.rows[0] || getDeviceByName(device.name);

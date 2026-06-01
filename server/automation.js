@@ -1,3 +1,4 @@
+import { toDeviceMqttPayload } from "./config/devices.js";
 import { publishMqtt } from "./mqtt.js";
 import { DEVICE_CONTROL_TOPICS } from "./mqttTopics.js";
 import { broadcastRealtime } from "./realtime.js";
@@ -97,18 +98,22 @@ function evaluateRuleCondition(value, rule, threshold) {
 }
 
 function buildAutomationCommand({ rule, targetDevice, sensorValue, threshold, device }) {
+  const isOn = rule.action === "turn_on";
+  const payload = {
+    ...toDeviceMqttPayload({
+      deviceId: targetDevice,
+      isOn,
+      source: "automation",
+    }),
+    rule_id: rule.id,
+    sensor_type: rule.sensor_type,
+    value: sensorValue,
+    threshold,
+  };
+
   return {
     topic: DEVICE_CONTROL_TOPICS[targetDevice],
-    payload: {
-      device: targetDevice,
-      is_on: rule.action === "turn_on",
-      action: rule.action,
-      source: "automation",
-      rule_id: rule.id,
-      sensor_type: rule.sensor_type,
-      value: sensorValue,
-      threshold,
-    },
+    payload,
     device,
   };
 }

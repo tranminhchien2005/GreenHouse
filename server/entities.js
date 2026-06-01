@@ -45,6 +45,7 @@ import {
 import {
   deleteDevice,
   getDeviceByName,
+  listConfiguredDevices,
   listDevices,
   updateDevice,
   updateDeviceByName,
@@ -63,6 +64,7 @@ import {
   getLatestSensorReading,
   getSensorReadingById,
   getDailyStats,
+  listLatestSensorReadingsByNode,
   listSensorReadings,
 } from "./repositories/sensorRepository.js";
 import {
@@ -129,11 +131,17 @@ function toLegacyDeviceState(device) {
     postgres_id: device.id,
     device_id: device.name,
     device_name: device.name,
-    name: device.name,
+    name: device.label || device.name,
+    label: device.label || device.name,
     type: device.type,
+    scope: device.scope,
+    node_id: device.node_id,
+    nodeId: device.node_id,
+    zoneLabel: device.zoneLabel,
     is_on: device.is_on,
     mode: device.mode,
     online: device.online,
+    is_connected: device.online,
     last_seen: device.last_seen_at,
     last_seen_at: device.last_seen_at,
     created_date: device.created_at,
@@ -148,6 +156,8 @@ function toDeviceRepositoryData(data = {}) {
     ...data,
     name: data.name ?? data.device_id ?? data.id,
     type: data.type,
+    scope: data.scope,
+    node_id: data.node_id ?? data.nodeId,
     is_on: data.is_on ?? data.isOn,
     mode: data.mode,
     online: data.online,
@@ -171,11 +181,14 @@ function getSensorSortOptions(url) {
     soilMoisture: "soil_moisture",
   };
 
+  const nodeId = url.searchParams.get("node_id") || url.searchParams.get("nodeId");
+
   return {
     limit: url.searchParams.get("limit"),
     page: url.searchParams.get("page"),
     from: url.searchParams.get("from"),
     to: url.searchParams.get("to"),
+    nodeId: nodeId || undefined,
     sortBy: sortFieldAliases[sortByValue] || sortByValue || "created_at",
     sortOrder: isDesc ? "desc" : sortOrderParam,
   };
@@ -653,6 +666,12 @@ async function handleSensorData(req, res, url, id, action) {
     return true;
   }
 
+  if (req.method === "GET" && id === "latest-by-node") {
+    const readings = await listLatestSensorReadingsByNode();
+    sendJson(res, 200, readings.map(toLegacySensorData));
+    return true;
+  }
+
   if (req.method === "GET" && !id) {
     const readings = await listSensorReadings(getSensorSortOptions(url));
     sendJson(res, 200, readings.map(toLegacySensorData));
@@ -1019,7 +1038,7 @@ async function handleDeviceState(req, res, url, id, action) {
     const sortBy = url.searchParams.get("sortBy");
     const limitParam = url.searchParams.get("limit");
     const limit = limitParam == null ? null : Number(limitParam);
-    const devices = (await listDevices()).map(toLegacyDeviceState);
+    const devices = (await listConfiguredDevices()).map(toLegacyDeviceState);
     const sorted = sortItems(devices, sortBy);
     sendJson(res, 200, Number.isFinite(limit) ? sorted.slice(0, limit) : sorted);
     return true;

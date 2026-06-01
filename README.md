@@ -452,12 +452,25 @@ Topic MQTT gợi ý:
 ```text
 greenhouse/your-project-id/sensors
 greenhouse/your-project-id/alerts/sms
-greenhouse/your-project-id/control/pump
+greenhouse/your-project-id/control/pump_1
+greenhouse/your-project-id/control/mist_1
+greenhouse/your-project-id/control/pump_2
+greenhouse/your-project-id/control/mist_2
 greenhouse/your-project-id/control/fan
-greenhouse/your-project-id/control/light
+greenhouse/your-project-id/control/led
 greenhouse/your-project-id/control/gateway
 greenhouse/your-project-id/device/status
 ```
+
+Payload điều khiển zone (ví dụ `pump_1`) gồm `device`, `is_on`, `scope: "zone"`, `node_id: "node-1"`. Thiết bị chung (`fan`, `led`) dùng `scope: "global"`.
+
+Firmware relay controller cần map:
+- `pump_1` -> relay bơm Khu 1
+- `mist_1` -> relay phun sương Khu 1
+- `pump_2` -> relay bơm Khu 2
+- `mist_2` -> relay phun sương Khu 2
+- `fan` -> relay quạt
+- `led` -> relay đèn
 
 Mỗi ESP phải publish trạng thái thật về `<MQTT_TOPIC_PREFIX>/device/status` sau khi nhận lệnh để web biết thiết bị đã chạy thành công. Firmware mẫu nằm ở `firmware/esp32_mqtt_device_status_example/esp32_mqtt_device_status_example.ino`; mẫu này subscribe các topic `control/<device>`, bật/tắt relay rồi publish status chuẩn có `device` và `is_on`.
 

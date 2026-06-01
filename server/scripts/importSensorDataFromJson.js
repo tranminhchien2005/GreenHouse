@@ -41,6 +41,7 @@ function normalizeDate(value) {
 
 function mapSensorRecord(record = {}) {
   const reading = {
+    node_id: record.node_id ?? record.nodeId ?? "default",
     temperature: toNumberOrNull(record.temperature ?? record.temp),
     humidity: toNumberOrNull(record.humidity),
     soil_moisture: toNumberOrNull(

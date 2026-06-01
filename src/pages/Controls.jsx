@@ -7,80 +7,117 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import {
-  CheckCircle2,
   Clock3,
   Droplets,
   Fan,
+  Cloud,
   Lightbulb,
   Loader2,
   Power,
   RadioTower,
   SendHorizontal,
   Settings2,
-  TriangleAlert,
-  Wifi,
-  WifiOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion } from 'framer-motion';
-import { DEVICE_IDS } from '@/config/greenhouse';
+import {
+  DEVICE_CONTROL_GROUPS,
+  DEVICE_IDS,
+  getDeviceDefinition,
+  getDeviceLabel,
+  getDeviceSubtitle,
+} from '@/config/devices';
 import { deviceService } from '@/services/deviceService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
 
-const deviceConfig = {
+const typeIcons = {
+  pump: Droplets,
+  mist: Cloud,
+  fan: Fan,
+  light: Lightbulb,
+};
+
+const typeStyles = {
   pump: {
-    icon: Droplets,
-    label: 'Máy bơm nước',
-    desc: 'Tưới cây tự động',
     accent: 'bg-blue-500',
     soft: 'bg-blue-50 text-blue-700 border-blue-100',
     active: 'bg-blue-600 text-white',
   },
+  mist: {
+    accent: 'bg-cyan-500',
+    soft: 'bg-cyan-50 text-cyan-700 border-cyan-100',
+    active: 'bg-cyan-600 text-white',
+  },
   fan: {
-    icon: Fan,
-    label: 'Quạt thông gió',
-    desc: 'Làm mát nhà kính',
     accent: 'bg-teal-500',
     soft: 'bg-teal-50 text-teal-700 border-teal-100',
     active: 'bg-teal-600 text-white',
   },
   light: {
-    icon: Lightbulb,
-    label: 'Đèn chiếu sáng',
-    desc: 'Bổ sung ánh sáng',
     accent: 'bg-amber-500',
     soft: 'bg-amber-50 text-amber-700 border-amber-100',
     active: 'bg-amber-500 text-white',
   },
 };
 
-const commandStatusConfig = {
-  command_sent: {
-    icon: Loader2,
-    label: 'Chờ xác nhận',
-    className: 'border-amber-200 bg-amber-50 text-amber-700',
-    iconClassName: 'animate-spin',
-  },
-  confirmed: {
-    icon: CheckCircle2,
-    label: 'Đã xác nhận',
-    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
-  },
-  failed: {
-    icon: TriangleAlert,
-    label: 'Gửi thất bại',
-    className: 'border-red-200 bg-red-50 text-red-700',
-  },
-  timeout: {
-    icon: Clock3,
-    label: 'Hết thời gian',
-    className: 'border-red-200 bg-red-50 text-red-700',
-  },
-};
+function getDeviceCardConfig(deviceId) {
+  const definition = getDeviceDefinition(deviceId);
+  const type = definition?.type || 'pump';
+  const styles = typeStyles[type] || typeStyles.pump;
+  return {
+    icon: typeIcons[type] || Droplets,
+    label: definition?.name || getDeviceLabel(deviceId),
+    desc: getDeviceSubtitle({ device_id: deviceId }) || 'Thiết bị nhà kính',
+    ...styles,
+  };
+}
 
 function getCommandStatus(log) {
   return log?.command_status || log?.commandStatus || 'command_sent';
+}
+
+function getLogCreatedAt(log) {
+  return log?.created_at || log?.created_date || null;
+}
+
+function formatRelativeTimeVi(value) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 45) return 'vừa xong';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} phút trước`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} giờ trước`;
+  const days = Math.floor(hours / 24);
+  return `${days} ngày trước`;
+}
+
+function getCommandStatusLineText(log) {
+  if (!log) return 'Chưa có lệnh';
+
+  const status = getCommandStatus(log);
+  if (status === 'command_sent') return 'Chờ xác nhận';
+  if (status === 'failed') return 'Gửi thất bại';
+  if (status === 'timeout') return 'Hết thời gian';
+
+  return formatRelativeTimeVi(getLogCreatedAt(log)) || 'Đã xác nhận';
+}
+
+function DeviceStatusLine({ isOnline, latestCommandLog }) {
+  const connection = isOnline ? 'Đã kết nối' : 'Chưa kết nối';
+  const command = getCommandStatusLineText(latestCommandLog);
+
+  return (
+    <p className="mt-1.5 text-xs text-muted-foreground">
+      {connection}
+      {' · '}
+      {command}
+    </p>
+  );
 }
 
 function matchesDeviceId(item, deviceId) {
@@ -89,28 +126,6 @@ function matchesDeviceId(item, deviceId) {
 
 function matchesCommandLog(log, deviceId) {
   return (log?.device_name || log?.deviceName) === deviceId;
-}
-
-function DeviceCommandStatus({ log }) {
-  if (!log) {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Clock3 className="h-3.5 w-3.5" />
-        Chưa có lệnh gần đây
-      </span>
-    );
-  }
-
-  const status = getCommandStatus(log);
-  const config = commandStatusConfig[status] || commandStatusConfig.command_sent;
-  const Icon = config.icon;
-
-  return (
-    <Badge variant="outline" className={cn('gap-1.5 border px-2 py-1 text-[11px]', config.className)}>
-      <Icon className={cn('h-3.5 w-3.5', config.iconClassName)} />
-      {config.label}
-    </Badge>
-  );
 }
 
 function SummaryCard({ icon: Icon, label, value, tone }) {
@@ -136,7 +151,7 @@ function ModeButton({ active, disabled, children, onClick }) {
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        'h-8 min-w-20 rounded-md px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        'h-7 min-w-[4.5rem] rounded-md px-2.5 text-[11px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50',
         active
           ? 'bg-primary text-primary-foreground shadow-sm'
           : 'text-muted-foreground hover:bg-background hover:text-foreground',
@@ -157,7 +172,7 @@ function DeviceStateBadge({ device, isOn }) {
   }
 
   return (
-    <Badge className={cn('border px-2.5 py-1 text-xs', isOn
+    <Badge className={cn('shrink-0 border px-2 py-0.5 text-[11px]', isOn
       ? 'border-primary/20 bg-primary text-primary-foreground'
       : 'border-slate-200 bg-slate-100 text-slate-600 hover:bg-slate-100'
     )}>
@@ -177,7 +192,7 @@ function DeviceControlCard({
   onToggle,
   onModeChange,
 }) {
-  const config = deviceConfig[deviceId];
+  const config = getDeviceCardConfig(deviceId);
   const Icon = config.icon;
   const isOn = device?.is_on || false;
   const isDevicePending = isTogglePending || isModePending || !canControl;
@@ -186,68 +201,52 @@ function DeviceControlCard({
   return (
     <motion.div
       key={deviceId}
-      className="h-full"
-      initial={{ opacity: 0, y: 16 }}
+      initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.06 }}
+      transition={{ delay: index * 0.05 }}
     >
       <Card className={cn(
-        'relative h-full overflow-hidden rounded-lg border bg-card shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md',
+        'rounded-2xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md',
         isOn ? 'border-primary/25' : 'border-border',
       )}>
-        <div className={cn(
-          'absolute inset-y-0 left-0 w-1 transition-opacity',
-          isOn ? config.accent : 'bg-border',
-        )} />
-
-        <div className="flex h-full flex-col p-5 pl-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className={cn(
-                'flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border transition-colors',
-                isOn ? config.active : config.soft,
-              )}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0">
-                <h3 className="truncate text-base font-semibold">{config.label}</h3>
-                <p className="truncate text-sm text-muted-foreground">{config.desc}</p>
-              </div>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-colors',
+              isOn ? config.active : config.soft,
+            )}>
+              <Icon className="h-5 w-5" />
             </div>
-            <DeviceStateBadge device={device} isOn={isOn} />
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold leading-tight">{config.label}</h3>
+              <p className="truncate text-xs text-muted-foreground">{config.desc}</p>
+              <DeviceStatusLine isOnline={isOnline} latestCommandLog={latestCommandLog} />
+            </div>
           </div>
+          <DeviceStateBadge device={device} isOn={isOn} />
+        </div>
 
-          <div className="mt-5 space-y-4">
-            <div className="flex items-center justify-between gap-4 rounded-md bg-muted/50 px-3 py-2.5">
-              <div className="flex min-w-0 items-center gap-2 text-sm font-medium">
-                {isOnline ? (
-                  <Wifi className="h-4 w-4 text-primary" />
-                ) : (
-                  <WifiOff className="h-4 w-4 text-muted-foreground" />
-                )}
-                <span className="truncate">{isOnline ? 'Đã kết nối' : 'Chưa kết nối'}</span>
-              </div>
-              <DeviceCommandStatus log={latestCommandLog} />
-            </div>
-
-            <div className="flex items-center justify-between gap-4 border-t pt-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Power className="h-4 w-4 text-muted-foreground" />
+        <div className="mt-2 border-t pt-1">
+          <div className="flex flex-col gap-0 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+            <div className="flex items-center justify-between gap-3 py-2 lg:flex-1">
+              <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <Power className="h-3.5 w-3.5 text-muted-foreground" />
                 Nguồn
-              </div>
+              </span>
               <Switch
                 checked={isOn}
                 onCheckedChange={(checked) => onToggle(device, deviceId, checked)}
                 disabled={!device || isDevicePending}
+                className="scale-90"
               />
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <Settings2 className="h-4 w-4 text-muted-foreground" />
+            <div className="flex items-center justify-between gap-2 border-t py-2 lg:flex-1 lg:border-t-0 lg:py-2">
+              <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                <Settings2 className="h-3.5 w-3.5 text-muted-foreground" />
                 Chế độ
-              </div>
-              <div className="inline-grid grid-cols-2 rounded-lg bg-muted p-1">
+              </span>
+              <div className="inline-grid grid-cols-2 rounded-md bg-muted p-0.5">
                 <ModeButton
                   active={device?.mode === 'manual'}
                   disabled={!device || isDevicePending || device?.mode === 'manual'}
@@ -346,14 +345,14 @@ export default function Controls() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
       queryClient.invalidateQueries({ queryKey: ['deviceCommandLogs'] });
-      const label = deviceConfig[variables.device_id]?.label || variables.device_id;
+      const label = getDeviceLabel(variables.device_id);
       toast({
         title: 'Đã gửi lệnh thiết bị',
         description: `${variables.is_on ? 'Bật' : 'Tắt'} ${label}. Đang chờ thiết bị xác nhận.`,
       });
     },
     onError: (error, variables) => {
-      const label = deviceConfig[variables?.device_id]?.label || variables?.device_id || 'thiết bị';
+      const label = getDeviceLabel(variables?.device_id) || 'thiết bị';
       toast({
         variant: 'destructive',
         title: 'Gửi lệnh thất bại',
@@ -366,14 +365,14 @@ export default function Controls() {
     mutationFn: ({ id, mode }) => deviceService.update(id, { mode }),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['devices'] });
-      const label = deviceConfig[variables.device_id]?.label || variables.device_id;
+      const label = getDeviceLabel(variables.device_id);
       toast({
         title: 'Đã cập nhật chế độ',
         description: `${label} đang ở chế độ ${variables.mode === 'auto' ? 'Tự động' : 'Thủ công'}.`,
       });
     },
     onError: (error, variables) => {
-      const label = deviceConfig[variables?.device_id]?.label || variables?.device_id || 'thiết bị';
+      const label = getDeviceLabel(variables?.device_id) || 'thiết bị';
       toast({
         variant: 'destructive',
         title: 'Cập nhật chế độ thất bại',
@@ -453,7 +452,7 @@ export default function Controls() {
     gatewayFrequencyMutation.mutate(seconds);
   };
 
-  const configuredDevices = DEVICE_IDS.map((deviceId) => devices.find(d => matchesDeviceId(d, deviceId)));
+  const configuredDevices = DEVICE_IDS.map((deviceId) => devices.find((d) => matchesDeviceId(d, deviceId)));
   const activeCount = configuredDevices.filter((device) => device?.is_on).length;
   const autoCount = configuredDevices.filter((device) => device?.mode === 'auto').length;
   const pendingCount = DEVICE_IDS
@@ -510,28 +509,35 @@ export default function Controls() {
         onSubmit={handleGatewayFrequencySubmit}
       />
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-        {DEVICE_IDS.map((deviceId, i) => {
-          const device = devices.find(d => matchesDeviceId(d, deviceId));
-          const latestCommandLog = commandLogs.find((log) => matchesCommandLog(log, deviceId));
-          const isTogglePending = toggleMutation.isPending && toggleMutation.variables?.device_id === deviceId;
-          const isModePending = modeMutation.isPending && modeMutation.variables?.device_id === deviceId;
+      <div className="space-y-8">
+        {DEVICE_CONTROL_GROUPS.map((group) => (
+          <section key={group.id} className="space-y-4">
+            <h2 className="text-base font-semibold">{group.title}</h2>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {group.deviceIds.map((deviceId, i) => {
+                const device = devices.find((d) => matchesDeviceId(d, deviceId));
+                const latestCommandLog = commandLogs.find((log) => matchesCommandLog(log, deviceId));
+                const isTogglePending = toggleMutation.isPending && toggleMutation.variables?.device_id === deviceId;
+                const isModePending = modeMutation.isPending && modeMutation.variables?.device_id === deviceId;
 
-          return (
-            <DeviceControlCard
-              key={deviceId}
-              deviceId={deviceId}
-              device={device}
-              latestCommandLog={latestCommandLog}
-              index={i}
-              isTogglePending={isTogglePending}
-              isModePending={isModePending}
-              canControl={canControl}
-              onToggle={handleToggleDevice}
-              onModeChange={handleModeChange}
-            />
-          );
-        })}
+                return (
+                  <DeviceControlCard
+                    key={deviceId}
+                    deviceId={deviceId}
+                    device={device}
+                    latestCommandLog={latestCommandLog}
+                    index={i}
+                    isTogglePending={isTogglePending}
+                    isModePending={isModePending}
+                    canControl={canControl}
+                    onToggle={handleToggleDevice}
+                    onModeChange={handleModeChange}
+                  />
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </div>
     </div>
   );

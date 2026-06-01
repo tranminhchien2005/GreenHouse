@@ -1,1 +1,7 @@
-{"temperature":30,"humidity":65,"soil_moisture":20,"light":700}
+{
+  "node_id": "node-1",
+  "temperature": 30,
+  "humidity": 65,
+  "soil_moisture": 20,
+  "light": 700
+}

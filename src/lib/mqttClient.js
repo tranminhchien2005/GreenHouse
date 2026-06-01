@@ -13,9 +13,12 @@ function topic(suffix) {
 // MQTT Topics
 export const TOPICS = {
   SENSORS: topic('sensors'),
-  CONTROL_PUMP: topic('control/pump'),
+  CONTROL_PUMP_1: topic('control/pump_1'),
+  CONTROL_MIST_1: topic('control/mist_1'),
+  CONTROL_PUMP_2: topic('control/pump_2'),
+  CONTROL_MIST_2: topic('control/mist_2'),
   CONTROL_FAN: topic('control/fan'),
-  CONTROL_LIGHT: topic('control/light'),
+  CONTROL_LED: topic('control/led'),
 };
 
 let client = null;

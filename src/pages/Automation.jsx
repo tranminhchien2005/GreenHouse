@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Plus, Zap, Trash2, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { DEVICE_LABELS, SENSOR_LABELS } from '@/config/greenhouse';
+import { DEVICE_DEFINITIONS, getDeviceLabel } from '@/config/devices';
+import { SENSOR_LABELS } from '@/config/greenhouse';
 import { automationService } from '@/services/automationService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
@@ -157,7 +158,9 @@ export default function Automation() {
                     <Select disabled={createMutation.isPending} value={form.target_device} onValueChange={(v) => setForm({ ...form, target_device: v })}>
                       <SelectTrigger><SelectValue placeholder="Chọn" /></SelectTrigger>
                       <SelectContent>
-                        {Object.entries(DEVICE_LABELS).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+                        {DEVICE_DEFINITIONS.map((device) => (
+                          <SelectItem key={device.id} value={device.id}>{device.name}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
@@ -219,7 +222,7 @@ export default function Automation() {
                         <span className="font-semibold text-foreground">{rule.threshold}</span>
                         <ArrowRight className="w-3.5 h-3.5" />
                         <span className="px-2 py-0.5 bg-primary/10 text-primary rounded-md">
-                          {actionLabels[rule.action]} {DEVICE_LABELS[rule.target_device]}
+                          {actionLabels[rule.action]} {getDeviceLabel(rule.target_device)}
                         </span>
                       </div>
                     </div>

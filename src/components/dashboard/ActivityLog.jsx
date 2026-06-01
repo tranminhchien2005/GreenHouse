@@ -3,7 +3,7 @@ import { format } from 'date-fns';
 import { Activity } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { DEVICE_LABELS } from '@/config/greenhouse';
+import { getDeviceLabel } from '@/config/devices';
 import { cn } from '@/lib/utils';
 
 const SOURCE_LABELS = {
@@ -82,7 +82,7 @@ export default function ActivityLog({ logs }) {
                       {formatTime(getCreatedAt(log))}
                     </td>
                     <td className="px-3 py-2.5 font-medium">
-                      {DEVICE_LABELS[deviceName] || deviceName}
+                      {getDeviceLabel(deviceName)}
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="font-mono text-xs">{ACTION_LABELS[log.command] || log.command}</span>

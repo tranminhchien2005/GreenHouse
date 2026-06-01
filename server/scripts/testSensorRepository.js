@@ -3,11 +3,13 @@ import {
   createSensorReading,
   getDailyStats,
   getLatestSensorReading,
+  listLatestSensorReadingsByNode,
   listSensorReadings,
 } from "../repositories/sensorRepository.js";
 
 try {
   const created = await createSensorReading({
+    node_id: "node-test",
     temperature: 28.5,
     humidity: 65,
     soilMoisture: 42,
@@ -15,8 +17,12 @@ try {
   });
   console.log("[SensorRepository] Created:", created);
 
-  const latest = await getLatestSensorReading();
+  const latest = await getLatestSensorReading({ nodeId: "node-test" });
   console.log("[SensorRepository] Latest:", latest);
+
+  const latestByNode = await listLatestSensorReadingsByNode();
+  console.log("[SensorRepository] Latest by node:");
+  console.table(latestByNode);
 
   const readings = await listSensorReadings({ limit: 5, page: 1 });
   console.log("[SensorRepository] Recent readings:");

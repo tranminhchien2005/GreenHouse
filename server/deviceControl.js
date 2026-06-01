@@ -1,27 +1,28 @@
+import {
+  getDeviceDefinition,
+  getDeviceLabel,
+  isKnownDeviceId,
+  toDeviceMqttPayload,
+} from "./config/devices.js";
 import { DEVICE_CONTROL_TOPICS, GATEWAY_CONTROL_TOPIC } from "./mqttTopics.js";
 import { publishMqtt } from "./mqtt.js";
 import { broadcastRealtime } from "./realtime.js";
 import { createDeviceCommandLog } from "./repositories/deviceCommandLogRepository.js";
 import { upsertDeviceByName } from "./repositories/deviceRepository.js";
 
-export const DEVICE_LABELS = {
-  pump: "Máy bơm",
-  fan: "Quạt",
-  light: "Đèn",
-};
+export { getDeviceLabel };
 
 export const DEVICE_ALIASES = {
-  pump: ["pump", "bơm", "bom", "máy bơm", "may bom", "tưới", "tuoi"],
+  pump_1: ["pump_1", "pump", "bơm khu 1", "bom khu 1"],
+  mist_1: ["mist_1", "mist", "phun sương khu 1", "phun suong khu 1"],
+  pump_2: ["pump_2", "bơm khu 2", "bom khu 2"],
+  mist_2: ["mist_2", "phun sương khu 2", "phun suong khu 2"],
   fan: ["fan", "quạt", "quat", "thông gió", "thong gio"],
-  light: ["light", "đèn", "den", "ánh sáng", "anh sang"],
+  led: ["led", "light", "đèn", "den", "ánh sáng", "anh sang"],
 };
 
 export function isValidDeviceId(deviceId) {
-  return Boolean(DEVICE_CONTROL_TOPICS[deviceId]);
-}
-
-export function getDeviceLabel(deviceId) {
-  return DEVICE_LABELS[deviceId] || deviceId;
+  return isKnownDeviceId(deviceId) && Boolean(DEVICE_CONTROL_TOPICS[deviceId]);
 }
 
 export function getActionLabel(isOn) {
@@ -33,12 +34,7 @@ export function toDeviceAction(isOn) {
 }
 
 export function toDevicePayload({ deviceId, isOn, source = "manual" }) {
-  return {
-    device: deviceId,
-    is_on: isOn,
-    action: toDeviceAction(isOn),
-    source,
-  };
+  return toDeviceMqttPayload({ deviceId, isOn, source });
 }
 
 export function normalizeUpdateFrequencySeconds(value) {
@@ -86,18 +82,29 @@ export async function executeDeviceCommand({ deviceId, isOn, requestedBy = null,
     throw error;
   }
 
+  const definition = getDeviceDefinition(command.deviceId);
   const topic = DEVICE_CONTROL_TOPICS[command.deviceId];
   const device = await upsertDeviceByName({
-    name: command.deviceId,
-    type: command.deviceId,
+    name: definition.id,
+    type: definition.type,
+    scope: definition.scope,
+    node_id: definition.node_id,
     ...(source === "manual" ? { mode: "manual" } : {}),
   });
+
+  let payload;
+  try {
+    payload = toDevicePayload({
+      deviceId: command.deviceId,
+      isOn: command.isOn,
+      source,
+    });
+  } catch (error) {
+    error.status = error.status || 400;
+    throw error;
+  }
+
   let commandLog = null;
-  const payload = toDevicePayload({
-    deviceId: command.deviceId,
-    isOn: command.isOn,
-    source,
-  });
 
   try {
     await publishMqtt(topic, payload, { qos: 1 });

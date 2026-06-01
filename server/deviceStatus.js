@@ -1,8 +1,9 @@
+import { getDeviceDefinition, isKnownDeviceId } from "./config/devices.js";
 import { subscribeMqtt } from "./mqtt.js";
 import { DEVICE_STATUS_TOPIC } from "./mqttTopics.js";
 import { broadcastRealtime } from "./realtime.js";
 import { markLatestDeviceCommandConfirmed } from "./repositories/deviceCommandLogRepository.js";
-import { getDeviceByName, updateDeviceByName } from "./repositories/deviceRepository.js";
+import { getDeviceByName, updateDeviceByName, upsertDeviceByName } from "./repositories/deviceRepository.js";
 
 let unsubscribeDeviceStatus = null;
 const validModes = new Set(["manual", "auto"]);
@@ -75,7 +76,16 @@ export async function updateDeviceStateFromStatus(payload) {
     return null;
   }
 
-  const existingDevice = await getDeviceByName(validation.deviceName);
+  let existingDevice = await getDeviceByName(validation.deviceName);
+  if (!existingDevice && isKnownDeviceId(validation.deviceName)) {
+    const definition = getDeviceDefinition(validation.deviceName);
+    existingDevice = await upsertDeviceByName({
+      name: definition.id,
+      type: definition.type,
+      scope: definition.scope,
+      node_id: definition.node_id,
+    });
+  }
   if (!existingDevice) {
     console.warn(
       `[DeviceStatus] Ignored status payload: device "${validation.deviceName}" not found in database.`,

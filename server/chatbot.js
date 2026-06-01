@@ -298,13 +298,13 @@ function findSensorBasedDeviceActions(context) {
   const lightMin = getRangeValue(profile.light_range, 0);
   const lightMax = getRangeValue(profile.light_range, 1);
 
-  const pump = getContextDevice(context, "pump");
+  const pump = getContextDevice(context, "pump_1");
   const fan = getContextDevice(context, "fan");
-  const light = getContextDevice(context, "light");
+  const light = getContextDevice(context, "led");
 
   if (soilMin != null && sensor.soil_moisture != null && sensor.soil_moisture < soilMin && pump?.is_on !== true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "pump",
+      deviceId: "pump_1",
       isOn: true,
       reason: `Độ ẩm đất ${sensor.soil_moisture}% thấp hơn ngưỡng ${soilMin}%.`,
     }));
@@ -312,7 +312,7 @@ function findSensorBasedDeviceActions(context) {
 
   if (soilMax != null && sensor.soil_moisture != null && sensor.soil_moisture > soilMax && pump?.is_on === true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "pump",
+      deviceId: "pump_1",
       isOn: false,
       reason: `Độ ẩm đất ${sensor.soil_moisture}% cao hơn ngưỡng ${soilMax}%.`,
     }));
@@ -328,7 +328,7 @@ function findSensorBasedDeviceActions(context) {
 
   if (lightMin != null && sensor.light != null && sensor.light < lightMin && light?.is_on !== true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "light",
+      deviceId: "led",
       isOn: true,
       reason: `Ánh sáng ${sensor.light} lux thấp hơn ngưỡng ${lightMin} lux.`,
     }));
@@ -336,7 +336,7 @@ function findSensorBasedDeviceActions(context) {
 
   if (lightMax != null && sensor.light != null && sensor.light > lightMax && light?.is_on === true) {
     addDeviceAction(actions, createDeviceAction({
-      deviceId: "light",
+      deviceId: "led",
       isOn: false,
       reason: `Ánh sáng ${sensor.light} lux cao hơn ngưỡng ${lightMax} lux.`,
     }));

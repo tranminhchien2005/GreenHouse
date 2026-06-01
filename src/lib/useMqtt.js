@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { isDashboardSensorNode } from '@/config/greenhouse';
 import { getMqttClient, getMqttStatus, subscribeTopic, TOPICS } from './mqttClient';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -44,27 +45,29 @@ export function useSensorData() {
         const data = JSON.parse(typeof payload === 'string' ? payload : payload?.toString?.() || '');
         setLatest(data);
 
-        const nowRow = {
-          id: `mqtt_${Date.now()}`,
-          created_date: new Date().toISOString(),
-          temperature: data.temperature,
-          humidity: data.humidity,
-          soil_moisture: data.soil_moisture,
-          light: data.light,
-        };
+        const nodeId = data.node_id ?? data.nodeId;
 
-        queryClient.setQueriesData({ queryKey: ['sensorData', 'history'] }, (old) => {
-          const arr = Array.isArray(old) ? old : [];
-          return [nowRow, ...arr].slice(0, 50);
-        });
-        queryClient.setQueriesData({ queryKey: ['sensorData', 'history', 50] }, (old) => {
-          const arr = Array.isArray(old) ? old : [];
-          return [nowRow, ...arr].slice(0, 50);
-        });
-        queryClient.setQueriesData({ queryKey: ['sensorData', 'latest', 1] }, (old) => {
-          const arr = Array.isArray(old) ? old : [];
-          return [nowRow, ...arr].slice(0, 1);
-        });
+        if (isDashboardSensorNode(nodeId)) {
+          const nowRow = {
+            id: `mqtt_${Date.now()}`,
+            node_id: nodeId,
+            nodeId,
+            created_date: new Date().toISOString(),
+            temperature: data.temperature,
+            humidity: data.humidity,
+            soil_moisture: data.soil_moisture,
+            light: data.light,
+          };
+
+          queryClient.setQueryData(['sensorData', 'latest-by-node'], (old) => {
+            const arr = Array.isArray(old) ? old : [];
+            const others = arr.filter(
+              (row) => isDashboardSensorNode(row?.node_id ?? row?.nodeId)
+                && (row?.node_id ?? row?.nodeId) !== nodeId,
+            );
+            return [...others, nowRow];
+          });
+        }
 
         // Also refetch server-backed views when convenient
         await Promise.all([

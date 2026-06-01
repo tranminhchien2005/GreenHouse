@@ -1,12 +1,25 @@
 import { query } from "../database.js";
 
-const sensorColumns = "id, temperature, humidity, soil_moisture, light, created_at";
-const sortableFields = new Set(["created_at", "temperature", "humidity", "soil_moisture", "light"]);
+const sensorColumns = "id, node_id, temperature, humidity, soil_moisture, light, created_at";
+const sortableFields = new Set([
+  "created_at",
+  "node_id",
+  "temperature",
+  "humidity",
+  "soil_moisture",
+  "light",
+]);
 
 function toNumberOrNull(value) {
   if (value == null || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
+}
+
+export function normalizeNodeId(value) {
+  const id = String(value ?? "default").trim();
+  if (!id) return "default";
+  return id.slice(0, 64);
 }
 
 function normalizeLimit(value) {
@@ -41,8 +54,17 @@ function addDateFilters(where, values, options = {}) {
   }
 }
 
+function addNodeFilter(where, values, options = {}) {
+  const nodeId = options.nodeId ?? options.node_id;
+  if (nodeId && nodeId !== "all") {
+    values.push(normalizeNodeId(nodeId));
+    where.push(`node_id = $${values.length}`);
+  }
+}
+
 function normalizeSensorReading(data = {}) {
   return {
+    node_id: normalizeNodeId(data.node_id ?? data.nodeId),
     temperature: toNumberOrNull(data.temperature ?? data.temp),
     humidity: toNumberOrNull(data.humidity),
     soil_moisture: toNumberOrNull(data.soil_moisture ?? data.soilMoisture ?? data.soil),
@@ -61,6 +83,7 @@ export async function listSensorReadings(options = {}) {
   const values = [];
 
   addDateFilters(where, values, options);
+  addNodeFilter(where, values, options);
 
   values.push(limit);
   const limitPlaceholder = `$${values.length}`;
@@ -90,22 +113,46 @@ export async function getSensorReadingById(id) {
   return result.rows[0] || null;
 }
 
-export async function getLatestSensorReading() {
+export async function getLatestSensorReading(options = {}) {
+  const where = [];
+  const values = [];
+
+  addNodeFilter(where, values, options);
+
   const result = await query(
     `
       SELECT ${sensorColumns}
       FROM sensor_readings
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       ORDER BY created_at DESC
       LIMIT 1
     `,
+    values,
   );
   return result.rows[0] || null;
 }
 
+export async function listLatestSensorReadingsByNode() {
+  const result = await query(
+    `
+      SELECT DISTINCT ON (node_id) ${sensorColumns}
+      FROM sensor_readings
+      ORDER BY node_id ASC, created_at DESC
+    `,
+  );
+  return result.rows;
+}
+
 export async function createSensorReading(data) {
   const reading = normalizeSensorReading(data);
-  const columns = ["temperature", "humidity", "soil_moisture", "light"];
-  const values = [reading.temperature, reading.humidity, reading.soil_moisture, reading.light];
+  const columns = ["node_id", "temperature", "humidity", "soil_moisture", "light"];
+  const values = [
+    reading.node_id,
+    reading.temperature,
+    reading.humidity,
+    reading.soil_moisture,
+    reading.light,
+  ];
 
   if (reading.created_at) {
     columns.push("created_at");
@@ -136,14 +183,16 @@ export async function findDuplicateSensorReading(data) {
     `
       SELECT ${sensorColumns}
       FROM sensor_readings
-      WHERE created_at = $1
-        AND temperature IS NOT DISTINCT FROM $2
-        AND humidity IS NOT DISTINCT FROM $3
-        AND soil_moisture IS NOT DISTINCT FROM $4
-        AND light IS NOT DISTINCT FROM $5
+      WHERE node_id = $1
+        AND created_at = $2
+        AND temperature IS NOT DISTINCT FROM $3
+        AND humidity IS NOT DISTINCT FROM $4
+        AND soil_moisture IS NOT DISTINCT FROM $5
+        AND light IS NOT DISTINCT FROM $6
       LIMIT 1
     `,
     [
+      reading.node_id,
       reading.created_at,
       reading.temperature,
       reading.humidity,
@@ -168,6 +217,7 @@ export async function getDailyStats(options = {}) {
   const values = [];
 
   addDateFilters(where, values, options);
+  addNodeFilter(where, values, options);
 
   const result = await query(
     `
